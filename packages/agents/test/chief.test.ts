@@ -113,4 +113,16 @@ describe("runJob", () => {
     const deps = await makeDeps({ totalBudget: 2n });
     await expect(runJob("jobsmall", "uniswap", deps)).rejects.toThrow(/too small/);
   });
+
+  it("kill switch: an aborted signal stops all specialist spending", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const deps = await makeDeps({ signal: controller.signal });
+    await runJob("jobkill", "uniswap", deps);
+    // No specialist ran -> Venice was never called, every agent marked failed.
+    expect((deps.venice.chat as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    const emitted = (deps.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(emitted.filter((e) => e.kind === "agent.failed")).toHaveLength(3);
+    expect(emitted.filter((e) => e.kind === "agent.finished")).toHaveLength(0);
+  });
 });

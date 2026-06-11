@@ -67,6 +67,23 @@ export async function requestBudgetGrant(): Promise<GrantedPermission> {
     },
   ]);
 
+  if (!granted?.length) {
+    throw new Error("MetaMask did not grant the permission — did you approve the popup?");
+  }
   const first = granted[0];
   return { context: first.context, from: first.from, signerMeta: first.signerMeta };
+}
+
+/** Best-effort on-chain revocation of a granted 7715 permission (kill switch). */
+export async function revokeGrant(context: `0x${string}`): Promise<void> {
+  try {
+    const provider = getProvider();
+    await provider.request({
+      method: "wallet_revokePermissions",
+      params: [{ "endowment:permitted-executions": { context } }],
+    });
+  } catch {
+    // Not all MetaMask builds expose execution-permission revocation; the
+    // backend job cancel is the guaranteed kill switch, so we degrade quietly.
+  }
 }

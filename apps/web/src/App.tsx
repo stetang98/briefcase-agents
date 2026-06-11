@@ -1,6 +1,13 @@
-import { useMemo, useState } from "react";
-import { connectWallet, requestBudgetGrant, type GrantedPermission } from "./lib/grant.js";
-import { startJob, subscribeEvents, fetchReport, type BriefcaseEvent, type JobReport } from "./lib/api.js";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { connectWallet, requestBudgetGrant, revokeGrant, type GrantedPermission } from "./lib/grant.js";
+import {
+  startJob,
+  subscribeEvents,
+  fetchReport,
+  cancelJob,
+  type BriefcaseEvent,
+  type JobReport,
+} from "./lib/api.js";
 import { DelegationTree, deriveAgentStates } from "./components/DelegationTree.js";
 import { EventFeed } from "./components/EventFeed.js";
 import { ReportView } from "./components/ReportView.js";
@@ -19,7 +26,15 @@ export default function App() {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
+  const unsubRef = useRef<(() => void) | null>(null);
+  const jobIdRef = useRef<string | null>(null);
+
   const states = useMemo(() => deriveAgentStates(events), [events]);
+
+  // Close any open SSE connection on unmount.
+  useEffect(() => () => unsubRef.current?.(), []);
+
+  const TOPIC_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
   async function run<T>(fn: () => Promise<T>) {
     setError(undefined);
@@ -48,32 +63,45 @@ export default function App() {
       setPhase("granted");
     });
 
-  const onStart = () =>
-    run(async () => {
+  const onStart = () => {
+    if (!TOPIC_RE.test(topic)) {
+      setError("Topic must be 1–64 chars: letters, numbers, _ or - (no spaces).");
+      return;
+    }
+    return run(async () => {
+      unsubRef.current?.(); // close any prior SSE before starting a new job
       setEvents([]);
       setReport(null);
       setRevoked(false);
       const jobId = await startJob(topic);
+      jobIdRef.current = jobId;
       setPhase("running");
       const unsub = subscribeEvents(jobId, async (e) => {
         setEvents((prev) => [...prev, e]);
         if (e.kind === "report.ready") {
-          const r = await fetchReport(jobId);
-          setReport(r);
+          setReport(await fetchReport(jobId));
           setPhase("done");
-          unsub();
+          unsubRef.current?.();
         }
-        if (e.kind === "job.failed") {
+        if (e.kind === "job.failed" || e.kind === "job.revoked") {
           setPhase("done");
-          unsub();
+          unsubRef.current?.();
         }
       });
+      unsubRef.current = unsub;
     });
-
-  const onRevoke = () => {
-    setRevoked(true);
-    setError("Permission revoked — agents can no longer spend the budget.");
   };
+
+  const onRevoke = () =>
+    run(async () => {
+      setRevoked(true);
+      // 1) guaranteed: stop the running job server-side (no more spending)
+      if (jobIdRef.current) await cancelJob(jobIdRef.current);
+      // 2) best-effort: revoke the 7715 grant on-chain so the authority is gone
+      if (grant) await revokeGrant(grant.context);
+      unsubRef.current?.();
+      setError("Permission revoked — the agent team can no longer spend the budget.");
+    });
 
   return (
     <div className="app">

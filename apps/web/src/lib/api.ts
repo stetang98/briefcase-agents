@@ -33,6 +33,11 @@ export async function startJob(topic: string): Promise<string> {
   return json.jobId;
 }
 
+/** Kill switch: tell the backend to abort the running job (stop all spending). */
+export async function cancelJob(jobId: string): Promise<void> {
+  await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" }).catch(() => {});
+}
+
 export async function fetchReport(jobId: string): Promise<JobReport | null> {
   const res = await fetch(`/api/jobs/${jobId}`);
   if (!res.ok) return null;
@@ -49,6 +54,10 @@ export function subscribeEvents(jobId: string, onEvent: (e: BriefcaseEvent) => v
     } catch {
       /* ignore keepalive / malformed frames */
     }
+  };
+  source.onerror = () => {
+    onEvent({ kind: "job.failed", detail: "connection to server lost" });
+    source.close();
   };
   return () => source.close();
 }

@@ -16,6 +16,13 @@ function renderMarkdown(md: string): { type: "h1" | "h2" | "li" | "p"; text: str
     });
 }
 
+/** Allow only image data URIs and https; otherwise treat as raw base64. */
+function safeImageSrc(raw: string): string {
+  if (/^data:image\/(webp|png|jpeg|jpg|gif);base64,/.test(raw)) return raw;
+  if (raw.startsWith("https://")) return raw;
+  return `data:image/webp;base64,${raw}`;
+}
+
 export function ReportView({ report }: { report: JobReport }) {
   const blocks = renderMarkdown(report.markdown);
   return (
@@ -23,11 +30,7 @@ export function ReportView({ report }: { report: JobReport }) {
       {report.coverImage && (
         <img
           className="report-cover"
-          src={
-            report.coverImage.startsWith("http") || report.coverImage.startsWith("data:")
-              ? report.coverImage
-              : `data:image/webp;base64,${report.coverImage}`
-          }
+          src={safeImageSrc(report.coverImage)}
           alt={`Cover for ${report.topic}`}
           width={640}
           height={240}

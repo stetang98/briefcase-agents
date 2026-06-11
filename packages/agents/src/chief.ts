@@ -32,6 +32,8 @@ export interface ChiefDeps {
   emit: (e: BriefcaseEvent) => void;
   /** Optional payroll settlement (1Shot) executed after the report compiles. */
   settle?: () => Promise<void>;
+  /** Abort further spending mid-job (the kill switch). Checked before each specialist. */
+  signal?: AbortSignal;
 }
 
 /** Orchestrate one research job: slice budget → redelegate → run team → compile → settle. */
@@ -58,6 +60,13 @@ export async function runJob(
   for (const spec of SPECIALISTS) {
     const slice = slices.find((s) => s.name === spec.name);
     if (!slice) continue;
+
+    // Kill switch: once revoked, do NO further signing or spending.
+    if (d.signal?.aborted) {
+      sections.push({ agent: spec.name, text: "", failed: true, note: "permission revoked" });
+      d.emit({ kind: "agent.failed", jobId, agent: spec.name });
+      continue;
+    }
 
     const delegation = buildSliceDelegation({
       from: d.chiefAccount,

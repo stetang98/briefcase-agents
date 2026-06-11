@@ -37,4 +37,7 @@ export async function make7702SmartAccount(pk: Hex, chain: Chain) {
   });
 }
 
-export type BriefcaseSmartAccount = Awaited<ReturnType<typeof makeBuyerSmartAccount>>;
+/** Either account flavor — both expose the address/environment/signDelegation surface. */
+export type BriefcaseSmartAccount =
+  | Awaited<ReturnType<typeof makeBuyerSmartAccount>>
+  | Awaited<ReturnType<typeof make7702SmartAccount>>;

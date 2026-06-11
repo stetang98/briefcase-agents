@@ -27,7 +27,12 @@ describe("jobs API", () => {
     expect(res.body.jobId).toBe("job-fixed");
     // allow the fire-and-forget run to settle
     await new Promise((r) => setTimeout(r, 10));
-    expect(runJob).toHaveBeenCalledWith("job-fixed", "uniswap", expect.anything());
+    expect(runJob).toHaveBeenCalledWith(
+      "job-fixed",
+      "uniswap",
+      expect.anything(),
+      expect.any(AbortSignal),
+    );
   });
 
   it("GET /api/jobs/:id reports status and final report", async () => {
@@ -43,6 +48,30 @@ describe("jobs API", () => {
   it("GET /api/jobs/:id returns 404 for unknown jobs", async () => {
     const { app } = setup();
     const res = await request(app).get("/api/jobs/nope");
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/jobs/:id/cancel aborts the run and marks it failed (kill switch)", async () => {
+    let captured: AbortSignal | undefined;
+    const runJob = vi.fn(
+      (_id: string, _topic: string, _emit: unknown, signal: AbortSignal) => {
+        captured = signal;
+        return new Promise<{ markdown: string }>(() => {}); // never resolves — long job
+      },
+    );
+    const { app, store } = setup(runJob as never);
+    await request(app).post("/api/jobs").send({ topic: "uniswap" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const res = await request(app).post("/api/jobs/job-fixed/cancel");
+    expect(res.status).toBe(200);
+    expect(captured?.aborted).toBe(true);
+    expect(store.get("job-fixed")?.status).toBe("failed");
+  });
+
+  it("cancel returns 404 for unknown jobs", async () => {
+    const { app } = setup();
+    const res = await request(app).post("/api/jobs/nope/cancel");
     expect(res.status).toBe(404);
   });
 

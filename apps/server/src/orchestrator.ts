@@ -33,13 +33,19 @@ export function buildOrchestrator(): RunJobFn | null {
   const venice = new VeniceClient({ apiKey: veniceKey });
   const model = process.env.VENICE_MODEL ?? "venice-uncensored-1-2";
 
-  return async (jobId, topic, emit) => {
-    // 7702 and Hybrid accounts share the address/environment/signDelegation
-    // surface the chief needs; cast to the common shape used by the agents pkg.
-    const chiefAccount = (await make7702SmartAccount(
-      chiefPk,
-      chain,
-    )) as unknown as BriefcaseSmartAccount;
+  // Defense-in-depth: even server-side RPC stays read-only (no broadcast).
+  const READONLY_RPC = new Set([
+    "eth_blockNumber",
+    "eth_getBalance",
+    "eth_call",
+    "eth_getCode",
+    "eth_getTransactionCount",
+    "eth_gasPrice",
+    "eth_getLogs",
+  ]);
+
+  return async (jobId, topic, emit, signal) => {
+    const chiefAccount: BriefcaseSmartAccount = await make7702SmartAccount(chiefPk, chain);
 
     const deps: ChiefDeps = {
       venice,
@@ -52,13 +58,19 @@ export function buildOrchestrator(): RunJobFn | null {
         paidFetch: makePaidFetch({ account: chiefAccount }),
         intelBaseUrl,
         venice,
-        publicRpc: (method, params) =>
-          publicClient.request({ method, params } as never) as Promise<unknown>,
+        publicRpc: (method, params) => {
+          if (!READONLY_RPC.has(method)) {
+            return Promise.reject(new Error(`rpc method not allowed: ${method}`));
+          }
+          return publicClient.request({ method, params } as never) as Promise<unknown>;
+        },
       }),
       tokenAddress: ADDRESSES.usdcBaseSepolia,
+      // µUSDC (6 decimals). Default 0.06 USDC = 60,000 µUSDC, split 3:2:1 across the team.
       totalBudget: parseUnits(process.env.JOB_BUDGET_USDC ?? "0.06", 6),
       sliceExpirySeconds: 600,
       emit: emit as (e: BriefcaseEvent) => void,
+      signal,
     };
 
     return runJob(jobId, topic, deps);
