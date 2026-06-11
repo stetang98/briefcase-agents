@@ -54,12 +54,16 @@ describe("runJob", () => {
       parseUnits("2", 6).toString(),
       parseUnits("1", 6).toString(),
     ]);
-    for (const s of slices) expect(s.delegationHash).toMatch(/^0x[0-9a-f]{64}$/);
+    // Scout & analyst sign real on-chain delegations; designer pays from the
+    // Venice balance (empty delegationHash) and signs nothing.
+    const signed = slices.filter((s) => s.delegationHash !== "");
+    expect(signed).toHaveLength(2);
+    for (const s of signed) expect(s.delegationHash).toMatch(/^0x[0-9a-f]{64}$/);
 
     expect(emitted.filter((e) => e.kind === "agent.finished")).toHaveLength(3);
     expect(emitted.at(-1)?.kind).toBe("report.ready");
     expect(report.markdown).toContain("Research Brief: uniswap");
-    expect(deps.chiefAccount.signDelegation).toHaveBeenCalledTimes(3);
+    expect(deps.chiefAccount.signDelegation).toHaveBeenCalledTimes(2);
   });
 
   it("degrades gracefully: a failing specialist yields agent.failed + unavailable section", async () => {
@@ -99,6 +103,30 @@ describe("runJob", () => {
     expect(
       emitted.some((e) => e.kind === "agent.tool" && e.agent === "designer" && e.detail === "generate_image"),
     ).toBe(true);
+    // Designer signs NO on-chain delegation (it pays from the Venice balance):
+    // its slice.created carries an empty delegationHash, and the chief signs
+    // exactly twice (scout + analyst).
+    const designerSlice = emitted.find((e) => e.kind === "slice.created" && e.agent === "designer");
+    expect(designerSlice?.delegationHash).toBe("");
+    expect(deps.chiefAccount.signDelegation).toHaveBeenCalledTimes(2);
+  });
+
+  it("degrades when generateImage fails: designer agent.failed, report still ready", async () => {
+    const deps = await makeDeps();
+    const baseSpecialistDeps = deps.specialistDeps;
+    deps.specialistDeps = (name, slice) =>
+      name === "designer"
+        ? {
+            ...baseSpecialistDeps(name, slice),
+            venice: { generateImage: vi.fn().mockRejectedValue(new Error("image api down")) } as never,
+          }
+        : baseSpecialistDeps(name, slice);
+    const report = await runJob("jobfail", "uniswap", deps);
+    expect(report.coverImage).toBeUndefined();
+    const emitted = (deps.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(emitted.some((e) => e.kind === "agent.failed" && e.agent === "designer")).toBe(true);
+    expect(emitted.at(-1)?.kind).toBe("report.ready");
+    expect(report.markdown).toMatch(/unavailable/);
   });
 
   it("rejects a totalBudget too small to slice", async () => {

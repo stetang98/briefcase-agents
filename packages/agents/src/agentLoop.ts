@@ -10,8 +10,6 @@ export interface AgentLoopOptions {
   /** Hard cap on model round-trips (cost/runaway protection). Default 8. */
   maxSteps?: number;
   onEvent?: (e: { type: string; detail?: string }) => void;
-  /** Observe each successful tool result (e.g. to extract a generated image). */
-  onToolResult?: (name: string, result: unknown) => void;
 }
 export interface AgentResult {
   text: string;
@@ -49,7 +47,6 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentResult> {
         const args: unknown = JSON.parse(call.function.arguments || "{}");
         if (tool) {
           const result = await tool.run(args);
-          o.onToolResult?.(call.function.name, result);
           content = JSON.stringify(result);
         } else {
           content = JSON.stringify({ error: `unknown tool: ${call.function.name}` });

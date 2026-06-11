@@ -22,7 +22,7 @@ export interface ChiefDeps {
   /** Resolves the wallet address a specialist's slice is delegated to. */
   specialistAddress: (name: string) => Hex;
   /** Builds the procurement deps for one specialist (paidFetch carries its slice). */
-  specialistDeps: (name: string, signedSlice: Delegation) => Omit<SpecialistDeps, "onPayment">;
+  specialistDeps: (name: string, signedSlice?: Delegation) => Omit<SpecialistDeps, "onPayment">;
   tokenAddress: Hex;
   totalBudget: bigint;
   /** Validity window for each slice delegation (security: never unbounded). */
@@ -68,6 +68,35 @@ export async function runJob(
       continue;
     }
 
+    // Designer is deterministic: it always produces exactly one cover and pays
+    // from the Venice x402 balance, NOT an on-chain ERC-7710 delegation — so it
+    // signs no slice. Handled before delegation signing so no unusable spend
+    // capability is ever minted. Scout/Analyst remain true tool-calling agents.
+    if (spec.name === "designer") {
+      d.emit({
+        kind: "slice.created",
+        jobId,
+        agent: spec.name,
+        amount: slice.amount.toString(),
+        delegationHash: "",
+      });
+      d.emit({ kind: "agent.started", jobId, agent: spec.name });
+      d.emit({ kind: "agent.tool", jobId, agent: spec.name, detail: "generate_image" });
+      try {
+        const deps = d.specialistDeps(spec.name);
+        const prompt =
+          `Abstract editorial cover image for a crypto research brief on "${topic}". ` +
+          `Minimal, sophisticated, dark navy and warm brass palette, no text.`;
+        const coverImage = await deps.venice.generateImage(prompt);
+        sections.push({ agent: spec.name, text: `Cover: ${topic}`, image: coverImage });
+        d.emit({ kind: "agent.finished", jobId, agent: spec.name });
+      } catch {
+        sections.push({ agent: spec.name, text: "", failed: true, note: "cover generation unavailable" });
+        d.emit({ kind: "agent.failed", jobId, agent: spec.name });
+      }
+      continue;
+    }
+
     const delegation = buildSliceDelegation({
       from: d.chiefAccount,
       toAddress: d.specialistAddress(spec.name),
@@ -92,31 +121,12 @@ export async function runJob(
     d.emit({ kind: "agent.started", jobId, agent: spec.name });
     try {
       const deps = d.specialistDeps(spec.name, signedSlice);
-      let coverImage: string | undefined;
-
-      // Designer is deterministic: always produce exactly one cover. Letting an
-      // LLM decide to call generate_image is unreliable — it sometimes skips the
-      // call or stalls. Scout/Analyst remain true tool-calling agents.
-      if (spec.name === "designer") {
-        const prompt =
-          `Abstract editorial cover image for a crypto research brief on "${topic}". ` +
-          `Minimal, sophisticated, dark navy and warm brass palette, no text.`;
-        coverImage = await deps.venice.generateImage(prompt);
-        d.emit({ kind: "agent.tool", jobId, agent: spec.name, detail: "generate_image" });
-        sections.push({ agent: spec.name, text: `Cover: ${topic}`, image: coverImage });
-        d.emit({ kind: "agent.finished", jobId, agent: spec.name });
-        continue;
-      }
-
-      const toolsWithImage = buildSpecialistTools({
+      const tools = buildSpecialistTools({
         ...deps,
         onPayment: (p) => d.emit({ kind: "payment.made", jobId, agent: spec.name, ...p }),
-        onImage: (b64) => {
-          coverImage = b64;
-        },
       });
       const scopedTools = Object.fromEntries(
-        Object.entries(toolsWithImage).filter(([name]) => spec.toolNames.includes(name)),
+        Object.entries(tools).filter(([name]) => spec.toolNames.includes(name)),
       );
       const result = await runAgentLoop({
         venice: d.venice,
@@ -127,20 +137,13 @@ export async function runJob(
         onEvent: (e) =>
           d.emit({ kind: "agent.tool", jobId, agent: spec.name, detail: e.detail }),
       });
-      sections.push({
-        agent: spec.name,
-        text: result.text,
-        failed: result.failed,
-        ...(coverImage ? { image: coverImage } : {}),
-      });
+      sections.push({ agent: spec.name, text: result.text, failed: result.failed });
       d.emit({ kind: result.failed ? "agent.failed" : "agent.finished", jobId, agent: spec.name });
     } catch (err) {
-      sections.push({
-        agent: spec.name,
-        text: "",
-        failed: true,
-        note: err instanceof Error ? err.message : "specialist crashed",
-      });
+      // Log full error server-side; keep account/balance details OUT of the
+      // user-facing report (it is served over /api/jobs/:id).
+      console.error(`[chief] ${spec.name} failed:`, err instanceof Error ? err.message : err);
+      sections.push({ agent: spec.name, text: "", failed: true, note: "specialist unavailable" });
       d.emit({ kind: "agent.failed", jobId, agent: spec.name });
     }
   }

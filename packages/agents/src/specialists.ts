@@ -26,6 +26,10 @@ export const SPECIALISTS: SpecialistSpec[] = [
       "balances, gas). State the numbers explicitly and what they imply. Keep it under 120 words.",
   },
   {
+    // NOTE: the designer runs a DETERMINISTIC path in chief.ts (a direct
+    // venice.generateImage call, no LLM loop), because LLM tool-calling for a
+    // single image proved flaky. `toolNames`/`system` below are unused for the
+    // designer today; kept for the budget weight and potential future agentic mode.
     name: "designer",
     weight: 1,
     toolNames: ["generate_image"],
