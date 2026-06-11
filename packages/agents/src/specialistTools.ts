@@ -63,7 +63,7 @@ export function buildSpecialistTools(deps: SpecialistDeps): ToolMap {
     },
     read_chain: {
       description:
-        "Read Base chain state via JSON-RPC. Allowed: eth_blockNumber, eth_getBalance, eth_call, eth_getCode, eth_getTransactionCount, eth_gasPrice, eth_getLogs.",
+        "Read Base Sepolia TESTNET state via JSON-RPC (mainnet contracts are not deployed here). Allowed: eth_blockNumber, eth_getBalance, eth_call, eth_getCode, eth_getTransactionCount, eth_gasPrice, eth_getLogs.",
       parameters: {
         type: "object",
         properties: {
