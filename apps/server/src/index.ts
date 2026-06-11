@@ -8,6 +8,9 @@ import { HTTPFacilitatorClient } from "@x402/core/server";
 import { x402ExactEvmErc7710ServerScheme } from "@metamask/x402";
 import { FACILITATOR_BASE_SEPOLIA } from "@briefcase/chain";
 import { intelRouter } from "./intel.js";
+import { EventBus, sseHandler } from "./events.js";
+import { makeJobsRouter, type JobStore, type RunJobFn } from "./jobs.js";
+import { makeWebhookRouter } from "./webhooks.js";
 
 export interface BuildAppOptions {
   payTo: `0x${string}`;
@@ -16,6 +19,10 @@ export interface BuildAppOptions {
   facilitatorUrl?: string;
   /** Allowed CORS origins; defaults to permissive for the hackathon demo dapp. */
   corsOrigins?: string[] | boolean;
+  /** Orchestrator that runs a research job; omit to disable the jobs API. */
+  runJob?: RunJobFn;
+  /** Ed25519 key provider for 1Shot webhook verification; omit to disable webhooks. */
+  webhookKeys?: () => Promise<Record<string, Uint8Array>>;
 }
 
 export function buildApp(opts: BuildAppOptions): Express {
@@ -40,6 +47,19 @@ export function buildApp(opts: BuildAppOptions): Express {
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true });
   });
+
+  // --- Free (un-paywalled) surfaces: events, jobs, webhooks ---
+  const bus = new EventBus();
+  app.get("/api/events", sseHandler(bus));
+  if (opts.runJob) {
+    const store: JobStore = new Map();
+    app.use(express.json());
+    app.use(makeJobsRouter({ bus, store, runJob: opts.runJob }));
+  }
+  if (opts.webhookKeys) {
+    app.use(express.json());
+    app.use(makeWebhookRouter(bus, opts.webhookKeys));
+  }
 
   const facilitator = new HTTPFacilitatorClient({
     url: opts.facilitatorUrl ?? FACILITATOR_BASE_SEPOLIA,
