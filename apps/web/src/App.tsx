@@ -31,6 +31,9 @@ export default function App() {
   // Generation counter: revoke/reset bump it so SSE callbacks already queued
   // for the old job can't clobber the phase after the user moved on.
   const jobGenRef = useRef(0);
+  // Reset epoch: bumped ONLY by onReset (jobGenRef is also bumped by normal
+  // start/revoke flows, so run() can't use it to detect an abandoning reset).
+  const resetEpochRef = useRef(0);
 
   const states = useMemo(() => deriveAgentStates(events), [events]);
 
@@ -45,11 +48,15 @@ export default function App() {
   const TOPIC_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
   async function run<T>(fn: () => Promise<T>) {
+    const epoch = resetEpochRef.current;
     setError(undefined);
     setBusy(true);
     try {
       return await fn();
     } catch (e) {
+      // A reset mid-flight must not have its clean state overwritten by the
+      // error of the call it abandoned.
+      if (epoch !== resetEpochRef.current) return undefined;
       setError(e instanceof Error ? e.message : "Something went wrong");
       return undefined;
     } finally {
@@ -59,14 +66,18 @@ export default function App() {
 
   const onConnect = () =>
     run(async () => {
+      const gen = jobGenRef.current;
       const addr = await connectWallet();
+      if (gen !== jobGenRef.current) return; // reset while the popup was open
       setUser(addr);
       setPhase("connected");
     });
 
   const onGrant = () =>
     run(async () => {
+      const gen = jobGenRef.current;
       const g = await requestBudgetGrant();
+      if (gen !== jobGenRef.current) return; // reset while the popup was open
       setGrant(g);
       setRevoked(false);
       setPhase("granted");
@@ -82,9 +93,15 @@ export default function App() {
       setEvents([]);
       setReport(null);
       setRevoked(false);
-      const jobId = await startJob(topic);
-      jobIdRef.current = jobId;
       const gen = ++jobGenRef.current;
+      const jobId = await startJob(topic);
+      if (gen !== jobGenRef.current) {
+        // Reset fired while dispatching: the job exists server-side but the
+        // reset couldn't know its id — cancel the orphan ourselves.
+        void cancelJob(jobId).catch(() => undefined);
+        return;
+      }
+      jobIdRef.current = jobId;
       setPhase("running");
       const unsub = subscribeEvents(jobId, async (e) => {
         if (gen !== jobGenRef.current) return; // stale stream (revoked/reset)
@@ -108,12 +125,14 @@ export default function App() {
   const onRevoke = () =>
     run(async () => {
       setRevoked(true);
-      jobGenRef.current++; // invalidate in-flight SSE callbacks immediately
+      const gen = ++jobGenRef.current; // invalidate in-flight SSE callbacks
       closeStream();
-      // 1) guaranteed: stop the running job server-side (no more spending)
-      if (jobIdRef.current) await cancelJob(jobIdRef.current);
-      // 2) best-effort: revoke the 7715 grant on-chain so the authority is gone
+      // 1) stop the running job server-side; even if the server is down, the
+      //    on-chain revoke below still removes the spending authority itself
+      if (jobIdRef.current) await cancelJob(jobIdRef.current).catch(() => undefined);
+      // 2) revoke the 7715 grant on-chain so the authority is gone
       if (grant) await revokeGrant(grant.context);
+      if (gen !== jobGenRef.current) return; // reset while revoking
       jobIdRef.current = null;
       // Back to "connected": revoke requires a grant, which requires a
       // connected wallet — granting a fresh budget restarts the demo.
@@ -122,20 +141,25 @@ export default function App() {
       setError("Permission revoked — the agent team can no longer spend the budget. Grant again to restart.");
     });
 
-  // Full in-app reset: recover from any stuck state without a page refresh.
-  const onReset = () =>
-    run(async () => {
-      jobGenRef.current++;
-      closeStream();
-      if (jobIdRef.current) await cancelJob(jobIdRef.current).catch(() => undefined);
-      jobIdRef.current = null;
-      setUser(undefined);
-      setGrant(undefined);
-      setEvents([]);
-      setReport(null);
-      setRevoked(false);
-      setPhase("idle");
-    });
+  // Full in-app reset: the escape hatch from ANY stuck state — including a
+  // hung request — so it never awaits and is never disabled. Continuations of
+  // in-flight calls are invalidated via the generation counter.
+  const onReset = () => {
+    resetEpochRef.current++;
+    jobGenRef.current++;
+    closeStream();
+    // Best-effort job cancel in the background; Revoke is the guaranteed path.
+    if (jobIdRef.current) void cancelJob(jobIdRef.current).catch(() => undefined);
+    jobIdRef.current = null;
+    setUser(undefined);
+    setGrant(undefined);
+    setEvents([]);
+    setReport(null);
+    setRevoked(false);
+    setError(undefined);
+    setBusy(false); // un-stick a hung request; its continuation is gen-guarded
+    setPhase("idle");
+  };
 
   return (
     <div className="app">
@@ -186,7 +210,6 @@ export default function App() {
           </button>
           <button
             onClick={onReset}
-            disabled={busy || phase === "idle"}
             className="btn btn-ghost"
             title="Disconnect and start the demo over"
           >
