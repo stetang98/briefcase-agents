@@ -4,6 +4,14 @@
 
 Built for the MetaMask Smart Accounts Kit × 1Shot API Hackathon (2026).
 
+## Live demo
+
+- **Dashboard:** https://briefcase-lime.vercel.app — dispatch a research job and watch
+  the agents pay on-chain in real time
+- **API:** https://briefcase-api-rekh.onrender.com ([health](https://briefcase-api-rekh.onrender.com/healthz))
+- All hosted spending happens on **Base Sepolia testnet** — the production demo
+  cannot touch mainnet funds.
+
 ## How it works
 
 1. **One permission grant (ERC-7715):** the user approves a capped, revocable budget in the MetaMask extension (e.g. 10 USDC/day).
@@ -22,12 +30,20 @@ Built for the MetaMask Smart Accounts Kit × 1Shot API Hackathon (2026).
 | Venice AI as core | `packages/agents` (all agent reasoning, image gen, TTS) |
 | 1Shot: mainnet 7710 relay + 7702 upgrades + webhooks | `packages/chain/src/oneshot/` (client, Ed25519 webhook verify), `scripts/spike-1shot-relay.ts` |
 
-## Verified live (Base Sepolia, 2026-06-10)
+## Verified live (Base Sepolia, 2026-06-10/11)
 
 - x402 + ERC-7710 round-trip through the MetaMask tx-sentinel facilitator:
   settlement tx [`0x67b6…73c4`](https://sepolia.basescan.org/tx/0x67b6a6f1f42dfc8e999c751e4b4a33cd8c7752ac34c9d2aa107ac1dffb0873c4)
 - 1Shot relay with attached EIP-7702 authorization, gas paid in USDC (zero ETH ever):
   [`0xa677…d4da`](https://sepolia.basescan.org/tx/0xa6775d3879565846e34d8686393b0e5b8a4300dbd80f34da03cbb2360c43d4da)
+- Full agent job from the **hosted production stack** — Scout's x402 purchase settled
+  on-chain: [`0x9e92…fb97f`](https://sepolia.basescan.org/tx/0x9e92445e9b2657bf4d52f988f4f87a74ba5c5a9370d77648945957a8364fb97f)
+
+## Verified live (Base **mainnet**, 2026-06-11)
+
+- 1Shot Permissionless Relayer settlement with real USDC — EIP-7702 upgrade attached,
+  gas paid in USDC from a zero-ETH account:
+  [`0x535b…276a`](https://basescan.org/tx/0x535b74786a4bff3be3fd8410521a5a6fdfce11761417df3b72fd1399a233276a)
 
 See `docs/superpowers/spikes/2026-06-10-live-spikes.md` for findings (including two
 undocumented SDK/API behaviors discovered and handled).

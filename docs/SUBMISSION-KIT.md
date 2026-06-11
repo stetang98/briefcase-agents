@@ -1,6 +1,15 @@
 # Briefcase — Submission Kit
 
-Everything needed to submit, minus the live runs. Prepared 2026-06-11.
+Everything needed to submit. Prepared 2026-06-11.
+
+**Live deployment:**
+
+- Dashboard: https://briefcase-lime.vercel.app (Vercel)
+- API: https://briefcase-api-rekh.onrender.com (Render free tier — first hit after idle may
+  take ~50s to wake; a GitHub Actions keepalive pings every 10 min)
+- Repo: https://github.com/stetang98/briefcase-agents
+- Hosted spending is **Base Sepolia testnet only** (`CHAINS.demo` is hardwired) — the
+  public demo cannot touch mainnet funds.
 
 ---
 
@@ -12,6 +21,8 @@ in the MAIN FLOW — required by every track. Record at 1440p, browser zoomed ~1
 **Pre-flight (off camera):**
 - `SERVER_PAYTO=0x39ba9943aDBcDB3a8C9C06e25ddABd134A64F793 VENICE_API_KEY=… DEV_CHIEF_PK=… pnpm --filter @briefcase/server dev`
 - `pnpm --filter @briefcase/web dev` → open http://localhost:5173
+- **Or record against the hosted stack instead:** open https://briefcase-lime.vercel.app
+  (hit https://briefcase-api-rekh.onrender.com/healthz first to wake the free-tier server).
 - MetaMask 13.34.1 unlocked, on Base Sepolia, with the demo account.
 
 | # | Shot (what to click) | Say (narration) |
@@ -58,8 +69,11 @@ webhooks. The user can revoke at any moment — cancelling the run and the on-ch
 | Best use of Venice AI | Venice powers all agent reasoning, on-chain reads, and the report cover image; paid via x402 (the agent buys its own intelligence). |
 | Best 1Shot Relayer | Mainnet 7710 relay with an attached EIP-7702 authorization, gas paid in USDC, Ed25519-signed webhooks drive the dashboard. |
 
-**Live proof (Base Sepolia):** x402+7710 settlement `0x67b6a6f1…0873c4`; 1Shot 7702 relay
-`0xa6775d38…43d4da`. Repo includes 71 passing tests and a hardened, reviewed codebase.
+**Live proof:** x402+7710 settlement `0x67b6a6f1…0873c4` and 1Shot 7702 relay
+`0xa6775d38…43d4da` (Base Sepolia); full agent job from the hosted production stack with
+Scout's x402 purchase settling on-chain `0x9e92445e…fb97f` (Base Sepolia); 1Shot relayer
+settlement with real USDC `0x535b7478…33276a` (**Base mainnet**, gas paid in USDC from a
+zero-ETH account). Repo includes 79 passing tests and a hardened, reviewed codebase.
 
 ---
 
@@ -117,10 +131,12 @@ on-chain authority. @MetaMaskDev #x402"
 
 ---
 
-## Remaining checklist (needs the user + a little spend)
+## Remaining checklist
 
-- [ ] Live end-to-end run with Venice funded ($5 x402 top-up from Agent wallet 0x14B8…).
-- [ ] 1Shot mainnet settlement leg (Chief wallet 0x39ba…).
+- [x] Live end-to-end run with Venice funded — done from the hosted stack 2026-06-11
+      (job `dac5429c…`, x402 tx `0x9e92445e…fb97f`, all three agents completed).
+- [x] 1Shot mainnet settlement leg (Chief wallet 0x39ba…) — tx `0x535b7478…33276a`, 2026-06-11.
+- [x] Deploy: Vercel (frontend) + Render (backend); `CORS_ORIGINS` locked to the Vercel
+      origin and verified live; GitHub Actions keepalive running.
 - [ ] Record the demo video per script A.
-- [ ] Deploy: Vercel (frontend) + tunneled/hosted backend; set `CORS_ORIGINS`.
 - [ ] Submit on HackQuest with text B; post C and D.
