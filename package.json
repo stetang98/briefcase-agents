@@ -1,0 +1,15 @@
+{
+  "name": "briefcase",
+  "private": true,
+  "scripts": {
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r exec tsc --noEmit"
+  },
+  "devDependencies": {
+    "dotenv": "^16.6.1",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0",
+    "viem": "^2.52.2",
+    "vitest": "^3.2.0"
+  }
+}
