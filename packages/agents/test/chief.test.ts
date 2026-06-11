@@ -30,7 +30,11 @@ async function makeDeps(overrides: Partial<ChiefDeps> = {}): Promise<ChiefDeps> 
       paidFetch: vi.fn() as unknown as typeof fetch,
       intelBaseUrl: "http://intel.local",
       venice: { generateImage: vi.fn().mockResolvedValue("img") } as never,
-      publicRpc: vi.fn().mockResolvedValue("0x1"),
+      // Realistic Base Sepolia values so grounding tests match production:
+      // block 42_710_815, gas 600_896 wei.
+      publicRpc: vi.fn().mockImplementation(async (method: string) =>
+        method === "eth_blockNumber" ? "0x28bb71f" : "0x92b40",
+      ),
     }),
     tokenAddress: ADDRESSES.usdcBaseSepolia,
     totalBudget: parseUnits("6", 6),
@@ -125,6 +129,50 @@ describe("runJob", () => {
     expect(report.coverImage).toBeUndefined();
     const emitted = (deps.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     expect(emitted.some((e) => e.kind === "agent.failed" && e.agent === "designer")).toBe(true);
+    expect(emitted.at(-1)?.kind).toBe("report.ready");
+    expect(report.markdown).toMatch(/unavailable/);
+  });
+
+  it("analyst grounding: ungrounded model text is replaced by the code-built fallback", async () => {
+    const deps = await makeDeps();
+    // Model returns plausible-but-ungrounded prose (the live failure mode).
+    (deps.venice.chat as ReturnType<typeof vi.fn>).mockResolvedValue(
+      finalMsg("EigenLayer is an Ethereum protocol introducing restaking."),
+    );
+    const report = await runJob("jobground", "eigenlayer", deps);
+    // The analyst SECTION must be the code-built fallback quoting the live
+    // readings (scout shares the venice mock, so scope to the section).
+    const analystSection = report.markdown.split("## On-chain Signals")[1]?.split("##")[0] ?? "";
+    expect(analystSection).toMatch(/Base Sepolia/);
+    expect(analystSection).toContain("block height 42710815");
+    expect(analystSection).not.toContain("introducing restaking");
+    const emitted = (deps.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    // The real RPC reads still surface as narrative tool events.
+    expect(
+      emitted.filter((e) => e.kind === "agent.tool" && e.agent === "analyst" && e.detail === "read_chain"),
+    ).toHaveLength(2);
+    expect(emitted.some((e) => e.kind === "agent.finished" && e.agent === "analyst")).toBe(true);
+  });
+
+  it("analyst grounding: model text quoting the readings is kept verbatim", async () => {
+    const deps = await makeDeps();
+    const grounded =
+      "Base Sepolia testnet stands at block 42710815 with gas at 0.000600896 gwei.";
+    (deps.venice.chat as ReturnType<typeof vi.fn>).mockResolvedValue(finalMsg(grounded));
+    const report = await runJob("jobground2", "eigenlayer", deps);
+    expect(report.markdown).toContain(grounded);
+  });
+
+  it("analyst grounding: RPC failure degrades to agent.failed, report still emits", async () => {
+    const deps = await makeDeps();
+    const base = deps.specialistDeps;
+    deps.specialistDeps = (name, slice) =>
+      name === "analyst"
+        ? { ...base(name, slice), publicRpc: vi.fn().mockRejectedValue(new Error("rpc down")) }
+        : base(name, slice);
+    const report = await runJob("jobrpcfail", "uniswap", deps);
+    const emitted = (deps.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(emitted.some((e) => e.kind === "agent.failed" && e.agent === "analyst")).toBe(true);
     expect(emitted.at(-1)?.kind).toBe("report.ready");
     expect(report.markdown).toMatch(/unavailable/);
   });

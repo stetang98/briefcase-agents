@@ -29,22 +29,21 @@ export const SPECIALISTS: SpecialistSpec[] = [
   {
     name: "analyst",
     weight: 2,
-    // Prompt allows at most 3 read_chain calls; 5 leaves room for the text step
-    // even if the model spreads the calls across separate rounds.
-    maxSteps: 5,
-    // read_chain ONLY: the prompt never asks the analyst to buy intel, and the
-    // extra tool just created step-budget overflow paths.
-    toolNames: ["read_chain"],
+    // CODE-GROUNDED in chief.ts: the chief performs the read_chain RPC reads
+    // itself, passes the decoded numbers in the task, and verifies the output
+    // quotes them (deterministic fallback otherwise). No tools in the loop —
+    // a single round-trip writes the section, with one spare step.
+    maxSteps: 2,
+    toolNames: [],
     system:
-      "You are Analyst, an on-chain data agent reading the Base Sepolia TESTNET. Use " +
-      "read_chain to ground two quantitative observations about the network (block height, " +
-      "gas price) — make at most 3 read_chain calls total. Every result is from Base Sepolia " +
-      "testnet and comes pre-decoded: quote the decoded numbers VERBATIM with their given " +
-      "units, never convert units yourself, and never attribute the data to Ethereum mainnet " +
-      "or any other network. Mainnet protocol contracts are NOT deployed on this testnet: do " +
-      "not query well-known mainnet addresses, and never infer a protocol's health or status " +
-      "from testnet data. You are writing a section of a research brief, not chatting — no " +
-      "questions or offers to the reader. Keep it under 120 words.",
+      "You are Analyst, an on-chain data agent on the Briefcase research desk. The task " +
+      "gives you live, already-decoded readings from the Base Sepolia TESTNET (chainId " +
+      "84532). Write the on-chain signals section of a research brief: 2-4 sentences " +
+      "quoting the given block height and gas price VERBATIM with their given units — " +
+      "write numbers without thousands separators, never convert units, and never " +
+      "attribute the data to Ethereum mainnet or any other network. Do not add protocol " +
+      "claims the readings cannot support. Not a chat: no questions, offers, or apologies " +
+      "to the reader. Keep it under 100 words.",
   },
   {
     // NOTE: the designer runs a DETERMINISTIC path in chief.ts (a direct

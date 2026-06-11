@@ -8,6 +8,7 @@ import {
 import type { Delegation } from "@metamask/smart-accounts-kit";
 import { runAgentLoop } from "./agentLoop.js";
 import { buildSpecialistTools, type SpecialistDeps } from "./specialistTools.js";
+import { readChainSnapshot, analystTask, analystFallbackText, isGrounded } from "./analyst.js";
 import { SPECIALISTS } from "./specialists.js";
 import { compileReport, type CompiledReport, type ReportSection } from "./report.js";
 import type { VeniceClient } from "./venice.js";
@@ -121,6 +122,39 @@ export async function runJob(
     d.emit({ kind: "agent.started", jobId, agent: spec.name });
     try {
       const deps = d.specialistDeps(spec.name, signedSlice);
+
+      // Analyst is CODE-GROUNDED: the chief reads the chain itself (real RPC
+      // reads, surfaced as the same narrative tool events), hands the decoded
+      // numbers to the model, and verifies the prose actually quotes them —
+      // otherwise a deterministic fallback ships. The flash-tier model proved
+      // too unreliable at calling read_chain and quoting results on its own.
+      // (The analyst's slice above is still signed on purpose: per-specialist
+      // ERC-7710 redelegation is part of the demo evidence, and the slice is
+      // expiry-bounded and never redeemed — read-only work spends nothing.)
+      if (spec.name === "analyst") {
+        const snapshot = await readChainSnapshot(
+          deps.publicRpc,
+          () => d.emit({ kind: "agent.tool", jobId, agent: spec.name, detail: "read_chain" }),
+          d.signal,
+        );
+        const result = await runAgentLoop({
+          venice: d.venice,
+          model: d.model,
+          system: spec.system,
+          task: analystTask(topic, snapshot),
+          tools: {},
+          maxSteps: spec.maxSteps,
+          signal: d.signal,
+        });
+        const grounded = !result.failed && isGrounded(result.text, snapshot);
+        sections.push({
+          agent: spec.name,
+          text: grounded ? result.text : analystFallbackText(topic, snapshot),
+        });
+        d.emit({ kind: "agent.finished", jobId, agent: spec.name });
+        continue;
+      }
+
       const tools = buildSpecialistTools({
         ...deps,
         onPayment: (p) => d.emit({ kind: "payment.made", jobId, agent: spec.name, ...p }),

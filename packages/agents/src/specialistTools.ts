@@ -60,7 +60,10 @@ function toSafeNumber(value: bigint): number | string {
  * Decode numeric hex results in code so the model never misreads hex or
  * misconverts units (a raw wei value once got reported as "600,896 Gwei").
  */
-function decodeRpcResult(method: string, result: unknown): Record<string, unknown> | undefined {
+export function decodeRpcResult(
+  method: string,
+  result: unknown,
+): Record<string, unknown> | undefined {
   if (typeof result !== "string" || !/^0x[0-9a-fA-F]+$/.test(result)) return undefined;
   const value = BigInt(result);
   switch (method) {
