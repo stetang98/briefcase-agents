@@ -1,6 +1,6 @@
 /** In production set VITE_API_URL to the backend origin (e.g. https://briefcase-api.up.railway.app).
  *  In dev the Vite proxy forwards /api → localhost:4021, so the empty string works. */
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
+const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? "").replace(/\/$/, "");
 
 export interface BriefcaseEvent {
   kind: string;

@@ -117,6 +117,9 @@ if (entry.endsWith("index.ts") || entry.endsWith("index.js")) {
   }
   const port = Number(process.env.PORT ?? 4021);
   const corsOrigins = process.env.CORS_ORIGINS?.split(",");
+  if (!corsOrigins && process.env.NODE_ENV === "production") {
+    console.warn("WARN: CORS_ORIGINS unset in production — all origins accepted (set CORS_ORIGINS=https://your-frontend.vercel.app)");
+  }
   // Lazy import so the agents package isn't loaded in test/import paths.
   const { buildOrchestrator } = await import("./orchestrator.js");
   const runJob = buildOrchestrator() ?? undefined;
