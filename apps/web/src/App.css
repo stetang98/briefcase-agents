@@ -101,6 +101,21 @@
   color: var(--color-bg);
 }
 
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-muted);
+  border-color: var(--color-line);
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--color-text);
+}
+
 .topic-row {
   display: flex;
   gap: var(--space-1);

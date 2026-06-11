@@ -28,8 +28,16 @@ export default function App() {
 
   const unsubRef = useRef<(() => void) | null>(null);
   const jobIdRef = useRef<string | null>(null);
+  // Generation counter: revoke/reset bump it so SSE callbacks already queued
+  // for the old job can't clobber the phase after the user moved on.
+  const jobGenRef = useRef(0);
 
   const states = useMemo(() => deriveAgentStates(events), [events]);
+
+  const closeStream = () => {
+    unsubRef.current?.();
+    unsubRef.current = null;
+  };
 
   // Close any open SSE connection on unmount.
   useEffect(() => () => unsubRef.current?.(), []);
@@ -60,6 +68,7 @@ export default function App() {
     run(async () => {
       const g = await requestBudgetGrant();
       setGrant(g);
+      setRevoked(false);
       setPhase("granted");
     });
 
@@ -69,23 +78,27 @@ export default function App() {
       return;
     }
     return run(async () => {
-      unsubRef.current?.(); // close any prior SSE before starting a new job
+      closeStream(); // close any prior SSE before starting a new job
       setEvents([]);
       setReport(null);
       setRevoked(false);
       const jobId = await startJob(topic);
       jobIdRef.current = jobId;
+      const gen = ++jobGenRef.current;
       setPhase("running");
       const unsub = subscribeEvents(jobId, async (e) => {
+        if (gen !== jobGenRef.current) return; // stale stream (revoked/reset)
         setEvents((prev) => [...prev, e]);
         if (e.kind === "report.ready") {
-          setReport(await fetchReport(jobId));
+          const rep = await fetchReport(jobId);
+          if (gen !== jobGenRef.current) return;
+          setReport(rep);
           setPhase("done");
-          unsubRef.current?.();
+          closeStream();
         }
         if (e.kind === "job.failed" || e.kind === "job.revoked") {
           setPhase("done");
-          unsubRef.current?.();
+          closeStream();
         }
       });
       unsubRef.current = unsub;
@@ -95,12 +108,33 @@ export default function App() {
   const onRevoke = () =>
     run(async () => {
       setRevoked(true);
+      jobGenRef.current++; // invalidate in-flight SSE callbacks immediately
+      closeStream();
       // 1) guaranteed: stop the running job server-side (no more spending)
       if (jobIdRef.current) await cancelJob(jobIdRef.current);
       // 2) best-effort: revoke the 7715 grant on-chain so the authority is gone
       if (grant) await revokeGrant(grant.context);
-      unsubRef.current?.();
-      setError("Permission revoked — the agent team can no longer spend the budget.");
+      jobIdRef.current = null;
+      // Back to "connected": revoke requires a grant, which requires a
+      // connected wallet — granting a fresh budget restarts the demo.
+      setGrant(undefined);
+      setPhase("connected");
+      setError("Permission revoked — the agent team can no longer spend the budget. Grant again to restart.");
+    });
+
+  // Full in-app reset: recover from any stuck state without a page refresh.
+  const onReset = () =>
+    run(async () => {
+      jobGenRef.current++;
+      closeStream();
+      if (jobIdRef.current) await cancelJob(jobIdRef.current).catch(() => undefined);
+      jobIdRef.current = null;
+      setUser(undefined);
+      setGrant(undefined);
+      setEvents([]);
+      setReport(null);
+      setRevoked(false);
+      setPhase("idle");
     });
 
   return (
@@ -132,13 +166,13 @@ export default function App() {
                 aria-label="Research topic"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                disabled={phase !== "granted" && phase !== "done"}
+                disabled={!grant || (phase !== "granted" && phase !== "done")}
                 className="topic-input mono"
                 placeholder="topic e.g. uniswap"
               />
               <button
                 onClick={onStart}
-                disabled={busy || (phase !== "granted" && phase !== "done")}
+                disabled={busy || !grant || (phase !== "granted" && phase !== "done")}
                 className="btn btn-primary"
               >
                 3 · Dispatch team
@@ -146,9 +180,19 @@ export default function App() {
             </div>
           </li>
         </ol>
-        <button onClick={onRevoke} disabled={!grant || revoked} className="btn btn-danger">
-          Revoke permission (kill switch)
-        </button>
+        <div className="control-row">
+          <button onClick={onRevoke} disabled={busy || !grant} className="btn btn-danger">
+            Revoke permission (kill switch)
+          </button>
+          <button
+            onClick={onReset}
+            disabled={busy || phase === "idle"}
+            className="btn btn-ghost"
+            title="Disconnect and start the demo over"
+          >
+            Reset
+          </button>
+        </div>
       </section>
 
       {error && <div className="banner" role="alert">{error}</div>}
