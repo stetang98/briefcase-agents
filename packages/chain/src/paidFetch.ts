@@ -5,15 +5,25 @@ import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { wrapFetchWithPayment } from "@x402/fetch";
 import type { BriefcaseSmartAccount } from "./accounts.js";
 
-export interface PaidFetchOptions {
-  /** The paying smart account (buyer) — or session account when redelegating a 7715 grant. */
-  account: BriefcaseSmartAccount;
-  /** Present when the agent spends a user's 7715 grant rather than its own funds. */
-  parentPermissionContext?: Hex;
-  /** The user's account address when redelegating (matches the 7715 grant's `from`). */
-  from?: Hex;
-  fetchImpl?: typeof fetch;
-}
+/**
+ * Discriminated union: when spending a user's 7715 grant, `from` (the user's
+ * account from the grant) is REQUIRED alongside `parentPermissionContext`.
+ */
+export type PaidFetchOptions =
+  | {
+      /** The paying smart account spending its own funds. */
+      account: BriefcaseSmartAccount;
+      parentPermissionContext?: never;
+      from?: never;
+      fetchImpl?: typeof fetch;
+    }
+  | {
+      /** Session account redelegating a user's 7715 grant. */
+      account: BriefcaseSmartAccount;
+      parentPermissionContext: Hex;
+      from: Hex;
+      fetchImpl?: typeof fetch;
+    };
 
 /** HTTP client that auto-pays x402 challenges with an ERC-7710 delegation. */
 export function makePaidFetch(opts: PaidFetchOptions): typeof fetch {

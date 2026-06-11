@@ -4,7 +4,7 @@ import "dotenv/config";
 import { encodeFunctionData, erc20Abi, getAddress, bytesToHex, parseUnits, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { randomBytes } from "node:crypto";
-import { createDelegation, ScopeType } from "@metamask/smart-accounts-kit";
+import { createDelegation, ScopeType, CaveatType } from "@metamask/smart-accounts-kit";
 import { make7702SmartAccount, publicClientFor } from "../packages/chain/src/accounts.js";
 import { OneShotClient, type OneShotBundle } from "../packages/chain/src/oneshot/client.js";
 import { CHAINS, ONESHOT_TESTNET, requireEnv } from "../packages/chain/src/config.js";
@@ -53,7 +53,7 @@ if (!code || code === "0x") {
 
 // Payout funds the buyer EOA so it can do its own 7702 upgrade + x402 payments.
 const buyerEoa = privateKeyToAccount(requireEnv("DEV_BUYER_PK") as Hex);
-const PAYOUT = 8_000_000n; // 8 USDC
+const PAYOUT = parseUnits(process.env.PAYOUT_USDC ?? "8", 6);
 
 async function buildSigned(fee: bigint): Promise<OneShotBundle> {
   const delegation = createDelegation({
@@ -66,6 +66,14 @@ async function buildSigned(fee: bigint): Promise<OneShotBundle> {
       tokenAddress: usdc!.address as Hex,
       maxAmount: fee + PAYOUT,
     },
+    // SECURITY: time-box the delegation — never leave an open-ended allowance to the relayer.
+    caveats: [
+      {
+        type: CaveatType.Timestamp,
+        afterThreshold: 0,
+        beforeThreshold: Math.floor(Date.now() / 1000) + 600,
+      },
+    ],
   });
   const signature = await chief.signDelegation({ delegation });
   return {
@@ -100,19 +108,25 @@ async function buildSigned(fee: bigint): Promise<OneShotBundle> {
 }
 
 const feeData = await oneshot.getFeeData(chain.id, usdc.address);
-const decimals = feeData.token?.decimals ?? 6;
+const decimals = 6; // USDC — pinned, never trusted from the relayer response
 const parseFee = (s: string) => parseUnits(s, decimals);
+const MAX_FEE = parseUnits("0.50", decimals); // hard ceiling on relay fee
 console.log("minFee (USDC base units):", feeData.minFee);
 
 const taskId = await oneshot.estimateThenSend(buildSigned, parseFee(feeData.minFee), {
+  maxFee: MAX_FEE,
+  feeDecimals: decimals,
   memo: "briefcase-spike",
   ...(process.env.WEBHOOK_URL ? { destinationUrl: process.env.WEBHOOK_URL } : {}),
 });
 console.log("taskId:", taskId);
 
+const deadline = Date.now() + 5 * 60_000;
 for (;;) {
+  if (Date.now() > deadline) throw new Error("status polling timed out after 5 minutes");
   const s = await oneshot.getStatus(taskId);
   console.log("status:", s.status, s.hash ?? "");
+  if (s.status >= 400) throw new Error(`relay failed: status=${s.status} data=${s.data ?? ""}`);
   if (s.status >= 200) {
     console.log(JSON.stringify(s, null, 2));
     break;

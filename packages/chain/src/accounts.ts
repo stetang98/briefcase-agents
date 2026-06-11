@@ -2,8 +2,10 @@ import { createPublicClient, http, type Chain, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { toMetaMaskSmartAccount, Implementation } from "@metamask/smart-accounts-kit";
 
-export function publicClientFor(chain: Chain) {
-  return createPublicClient({ chain, transport: http() });
+/** RPC override via env (e.g. RPC_URL_84532) to avoid public-endpoint rate limits. */
+export function publicClientFor(chain: Chain, rpcUrl?: string) {
+  const url = rpcUrl ?? process.env[`RPC_URL_${chain.id}`];
+  return createPublicClient({ chain, transport: http(url) });
 }
 
 /** Counterfactual Hybrid smart account owned by a burner EOA (buyer/specialist wallets). */

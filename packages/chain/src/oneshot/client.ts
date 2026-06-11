@@ -1,3 +1,5 @@
+import { isAddress, getAddress, parseUnits } from "viem";
+
 export class OneShotRpcError extends Error {
   constructor(
     public code: number,
@@ -27,20 +29,21 @@ export interface OneShotBundle {
   authorizationList?: OneShotAuthorization[];
 }
 export interface OneShotCapabilities {
-  targetAddress: string;
-  feeCollector: string;
-  tokens: { symbol: string; address: string }[];
+  targetAddress: `0x${string}`;
+  feeCollector: `0x${string}`;
+  tokens: { symbol: string; address: string; decimals?: string }[];
 }
 export interface EstimateResult {
   success: boolean;
   requiredPaymentAmount: string;
-  gasUsed: string;
+  gasUsed: unknown;
   context: string;
 }
 /**
- * Live API note (verified 2026-06-10): `minFee` and `requiredPaymentAmount`
- * are DECIMAL strings in human units (e.g. "0.01"), with `token.decimals`
- * provided. Convert with a `parseFee` function before doing bigint math.
+ * Live API note (verified 2026-06-10): `minFee` is a DECIMAL string in human
+ * units (e.g. "0.01") with `token.decimals` provided, while estimate's
+ * `requiredPaymentAmount` is in BASE units. The default fee parser handles
+ * both shapes; pass `feeDecimals` matching the payment token.
  */
 export interface FeeData {
   minFee: string;
@@ -60,7 +63,27 @@ export interface StatusResult {
   memo?: string;
 }
 
+export interface EstimateThenSendOptions {
+  /**
+   * SECURITY: hard ceiling on the fee this client will ever sign a delegation
+   * for. The relayer dictates `requiredPaymentAmount`; without a ceiling a
+   * compromised relayer could make us sign an arbitrarily large allowance.
+   */
+  maxFee: bigint;
+  /** Decimals used to parse decimal-formatted fee strings (default 6 = USDC). */
+  feeDecimals?: number;
+  destinationUrl?: string;
+  memo?: string;
+}
+
+/** Parses both base-unit ("10000") and decimal ("0.01") fee strings. */
+export function parseFeeString(s: string, decimals: number): bigint {
+  return s.includes(".") ? parseUnits(s, decimals) : BigInt(s);
+}
+
 export class OneShotClient {
+  private nextId = 0;
+
   constructor(
     private url: string,
     private fetchImpl: typeof fetch = fetch,
@@ -70,7 +93,7 @@ export class OneShotClient {
     const res = await this.fetchImpl(this.url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: ++this.nextId, method, params }),
     });
     if (!res.ok) throw new OneShotRpcError(res.status, `HTTP ${res.status}`);
     const j = (await res.json()) as { result?: T; error?: { code: number; message: string } };
@@ -79,10 +102,21 @@ export class OneShotClient {
   }
 
   async getCapabilities(chainId: number): Promise<OneShotCapabilities> {
-    const r = await this.rpc<Record<string, OneShotCapabilities>>("relayer_getCapabilities", [
-      String(chainId),
-    ]);
-    return r[String(chainId)];
+    const r = await this.rpc<Record<string, OneShotCapabilities | undefined>>(
+      "relayer_getCapabilities",
+      [String(chainId)],
+    );
+    const caps = r?.[String(chainId)];
+    if (!caps) throw new OneShotRpcError(4206, `no capabilities for chain ${chainId}`);
+    // Injection guard: these addresses end up inside signed delegations.
+    if (!isAddress(caps.targetAddress) || !isAddress(caps.feeCollector)) {
+      throw new OneShotRpcError(4201, "relayer returned an invalid address in capabilities");
+    }
+    return {
+      ...caps,
+      targetAddress: getAddress(caps.targetAddress),
+      feeCollector: getAddress(caps.feeCollector),
+    };
   }
 
   getFeeData(chainId: number, token: string): Promise<FeeData> {
@@ -106,24 +140,44 @@ export class OneShotClient {
   }
 
   /**
-   * Estimate-first loop: build+sign a bundle at a fee, estimate; if the relayer
-   * requires a different fee, rebuild ONCE at the exact required fee and re-estimate.
-   * Sends with the latest price-lock context (valid ~45s).
+   * Estimate-first loop with security rails:
+   * 1. build+sign at `initialFee`, estimate;
+   * 2. if the relayer requires a different fee, verify it is <= `maxFee`,
+   *    rebuild ONCE at the exact required fee, re-estimate;
+   * 3. if the re-estimate diverges again, ABORT (unstable/malicious fee);
+   * 4. send with the latest price-lock context (valid ~45s).
    */
   async estimateThenSend(
     buildSigned: (fee: bigint) => Promise<OneShotBundle>,
     initialFee: bigint,
-    opts: { destinationUrl?: string; memo?: string; parseFee?: (s: string) => bigint } = {},
+    opts: EstimateThenSendOptions,
   ): Promise<string> {
-    const { parseFee = BigInt, ...sendOpts } = opts;
+    const { maxFee, feeDecimals = 6, destinationUrl, memo } = opts;
+    const parse = (s: string) => parseFeeString(s, feeDecimals);
+    if (initialFee > maxFee) {
+      throw new OneShotRpcError(4200, `initial fee ${initialFee} exceeds maxFee ceiling ${maxFee}`);
+    }
     let bundle = await buildSigned(initialFee);
     let est = await this.estimate(bundle);
-    const required = parseFee(est.requiredPaymentAmount);
+    const required = parse(est.requiredPaymentAmount);
     if (required !== initialFee) {
+      if (required > maxFee) {
+        throw new OneShotRpcError(
+          4200,
+          `relayer demanded fee ${required} exceeds maxFee ceiling ${maxFee}`,
+        );
+      }
       bundle = await buildSigned(required);
       est = await this.estimate(bundle);
+      const finalRequired = parse(est.requiredPaymentAmount);
+      if (finalRequired !== required) {
+        throw new OneShotRpcError(
+          4204,
+          `fee unstable: re-signed at ${required}, re-estimate now demands ${finalRequired}`,
+        );
+      }
     }
     if (!est.success) throw new OneShotRpcError(4211, "simulation failed");
-    return this.send(bundle, est.context, sendOpts);
+    return this.send(bundle, est.context, { destinationUrl, memo });
   }
 }
