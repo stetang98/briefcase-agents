@@ -1,0 +1,23 @@
+{
+  "name": "@briefcase/chain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@metamask/smart-accounts-kit": "1.6.0",
+    "@metamask/x402": "0.2.0",
+    "@noble/ed25519": "^2.2.0",
+    "@x402/core": "2.14.0",
+    "@x402/fetch": "2.14.0",
+    "safe-stable-stringify": "^2.5.0",
+    "viem": "^2.31.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}
