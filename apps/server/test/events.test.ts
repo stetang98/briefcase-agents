@@ -12,9 +12,12 @@ function mockReqRes(query: Record<string, string>) {
       if (event === "close") closeHandler = cb;
     },
   } as unknown as Request;
+  const writeHead = vi.fn();
+  const end = vi.fn();
   const res = {
     writableEnded: false,
-    writeHead: vi.fn(),
+    writeHead,
+    end,
     // Handler flushes headers immediately so proxies open the stream.
     flushHeaders: vi.fn(),
     write: (s: string) => {
@@ -22,7 +25,7 @@ function mockReqRes(query: Record<string, string>) {
       return true;
     },
   } as unknown as Response;
-  return { req, res, chunks, close: () => closeHandler?.() };
+  return { req, res, chunks, writeHead, end, close: () => closeHandler?.() };
 }
 
 describe("EventBus", () => {
@@ -44,6 +47,20 @@ describe("EventBus", () => {
     bus.publish({ kind: "c", jobId: "j1" }); // evicts "a"
     expect(bus.replay("j1").map((e) => e.kind)).toEqual(["b", "c"]);
     expect(bus.replay("other")).toEqual([]);
+  });
+
+  it("caps the number of buffered jobs, evicting the oldest job's buffer", () => {
+    const bus = new EventBus(200, 2);
+    bus.publish({ kind: "a", jobId: "j1" });
+    bus.publish({ kind: "a", jobId: "j2" });
+    bus.publish({ kind: "a", jobId: "j3" }); // evicts j1's whole buffer
+    expect(bus.replay("j1")).toEqual([]);
+    expect(bus.replay("j2").map((e) => e.kind)).toEqual(["a"]);
+    expect(bus.replay("j3").map((e) => e.kind)).toEqual(["a"]);
+    // publishing more to a surviving job must not re-evict anything
+    bus.publish({ kind: "b", jobId: "j2" });
+    expect(bus.replay("j2").map((e) => e.kind)).toEqual(["a", "b"]);
+    expect(bus.replay("j3")).toHaveLength(1);
   });
 
   it("a throwing subscriber does not break other subscribers", () => {
@@ -84,5 +101,23 @@ describe("sseHandler", () => {
     const before = chunks.length;
     bus.publish({ kind: "late", jobId: "j1" });
     expect(chunks.length).toBe(before);
+  });
+
+  it("refuses new connections past the client cap with 503 (zombie-subscriber guard)", () => {
+    const bus = new EventBus();
+    const a = mockReqRes({});
+    sseHandler(bus, 1)(a.req, a.res);
+    expect(a.writeHead).toHaveBeenCalledWith(200, expect.anything());
+
+    const b = mockReqRes({});
+    sseHandler(bus, 1)(b.req, b.res);
+    expect(b.writeHead).toHaveBeenCalledWith(503, expect.anything());
+    expect(b.end).toHaveBeenCalled();
+
+    // closing the first connection frees the slot
+    a.close();
+    const c = mockReqRes({});
+    sseHandler(bus, 1)(c.req, c.res);
+    expect(c.writeHead).toHaveBeenCalledWith(200, expect.anything());
   });
 });

@@ -104,10 +104,24 @@ export function buildApp(opts: BuildAppOptions): Express {
 
   app.use(intelRouter);
 
-  // Final error handler: never leak stack traces to clients.
+  // Final error handler: never leak stack traces to clients. Client errors
+  // (body-parser sets err.status, e.g. 400 malformed JSON / 413 too large)
+  // pass through as 4xx so a bad request never reads as a server crash.
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    console.error("unhandled error:", err instanceof Error ? err.message : err);
-    res.status(500).json({ error: "internal server error" });
+    const status =
+      typeof (err as { status?: unknown })?.status === "number" &&
+      (err as { status: number }).status >= 400 &&
+      (err as { status: number }).status < 500
+        ? (err as { status: number }).status
+        : 500;
+    if (status === 500) {
+      console.error("unhandled error:", err instanceof Error ? err.message : err);
+    }
+    const messages: Record<number, string> = {
+      413: "request body too large",
+      500: "internal server error",
+    };
+    res.status(status).json({ error: messages[status] ?? "bad request" });
   });
 
   return app;

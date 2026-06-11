@@ -33,6 +33,33 @@ describe("intel API payment gate", () => {
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
   });
 
+  it("malformed JSON body yields a 4xx, not a 500 (judges poking the API)", async () => {
+    const appWithJobs = buildApp({
+      payTo: ("0x" + "22".repeat(20)) as `0x${string}`,
+      runJob: async () => ({ markdown: "# ok" }),
+    });
+    const res = await request(appWithJobs)
+      .post("/api/jobs")
+      .set("Content-Type", "application/json")
+      .send('{"topic": "uniswap"'); // truncated JSON
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+    expect(res.body.error).toMatch(/bad request/i);
+  });
+
+  it("oversized JSON body yields 413 with a size hint, not a 500", async () => {
+    const appWithJobs = buildApp({
+      payTo: ("0x" + "22".repeat(20)) as `0x${string}`,
+      runJob: async () => ({ markdown: "# ok" }),
+    });
+    const res = await request(appWithJobs)
+      .post("/api/jobs")
+      .set("Content-Type", "application/json")
+      .send(JSON.stringify({ topic: "uniswap", junk: "x".repeat(200_000) }));
+    expect(res.status).toBe(413);
+    expect(res.body.error).toMatch(/too large/i);
+  });
+
   it("rejects malformed topic params with 400 (after payment, validation still applies)", async () => {
     // Unpaid request to a malformed topic must NOT leak whether the topic is valid pre-payment;
     // the paywall fires first, so we assert the validator directly via a paid-path simulation:

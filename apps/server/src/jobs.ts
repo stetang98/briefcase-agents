@@ -34,10 +34,34 @@ export interface JobsDeps {
   idFactory?: () => string;
   /** Optional per-route limiter for POST /api/jobs (cost protection). */
   postLimiter?: RequestHandler;
+  /** Memory cap: completed jobs beyond this are evicted oldest-first. */
+  maxStoredJobs?: number;
+  /** Cap on simultaneously RUNNING jobs (each spends funds and holds memory). */
+  maxConcurrentJobs?: number;
 }
 
 // Must match the intel route's allowlist so an accepted topic is always fulfillable.
 const SAFE_TOPIC = /^[a-zA-Z0-9_-]{1,64}$/;
+
+// Reports carry ~90KB base64 cover images; an unbounded store would OOM a
+// long-lived free-tier process under sustained use. Running jobs count
+// against the cap but are never evicted, so the effective completed-job
+// retention is (cap - running).
+const DEFAULT_MAX_STORED_JOBS = 50;
+
+// Each running job spends real funds (x402, Venice) and holds an agent
+// pipeline in memory — the per-minute rate limit alone doesn't stop a
+// pile-up of long-running jobs.
+const DEFAULT_MAX_CONCURRENT_JOBS = 3;
+
+/** Evict oldest non-running jobs until the store fits the cap. */
+function evictCompletedJobs(store: JobStore, max: number): void {
+  if (store.size <= max) return;
+  for (const [id, record] of store) {
+    if (store.size <= max) break;
+    if (record.status !== "running") store.delete(id);
+  }
+}
 
 export function makeJobsRouter(deps: JobsDeps): RouterType {
   const router = Router();
@@ -51,8 +75,14 @@ export function makeJobsRouter(deps: JobsDeps): RouterType {
       res.status(400).json({ error: "topic must be 1-64 chars [a-zA-Z0-9_-]" });
       return;
     }
+    // controllers tracks exactly the running jobs (deleted in .finally()).
+    if (controllers.size >= (deps.maxConcurrentJobs ?? DEFAULT_MAX_CONCURRENT_JOBS)) {
+      res.status(503).json({ error: "server busy: too many jobs running, try again shortly" });
+      return;
+    }
     const jobId = newId();
     deps.store.set(jobId, { id: jobId, topic, status: "running" });
+    evictCompletedJobs(deps.store, deps.maxStoredJobs ?? DEFAULT_MAX_STORED_JOBS);
     const controller = new AbortController();
     controllers.set(jobId, controller);
 
