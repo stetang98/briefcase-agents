@@ -43,5 +43,21 @@ pnpm monorepo · TypeScript · viem · `@metamask/smart-accounts-kit` 1.6.0 ·
 pnpm install
 pnpm exec tsx scripts/gen-dev-keys.ts   # creates .env with burner keys
 pnpm -r test && pnpm typecheck
+
+# Backend (intel API + orchestrator + SSE + webhooks).
+# Orchestrator activates when DEV_CHIEF_PK and VENICE_API_KEY are set.
 SERVER_PAYTO=0x... pnpm --filter @briefcase/server dev
+
+# Frontend dashboard (proxies /api to :4021)
+pnpm --filter @briefcase/web dev   # http://localhost:5173
 ```
+
+## Surfaces
+
+- `apps/web` — dashboard: connect MetaMask → grant 10 USDC/day (ERC-7715) → dispatch
+  the team → watch the delegation tree light up and x402 payments settle → read the
+  report → revoke (kill switch). Dark-luxury "vault terminal" design.
+- `apps/server` — x402-gated intel API (seller), agent job runner, SSE event stream,
+  1Shot webhook receiver.
+- `packages/agents` — Venice-powered Chief + Scout/Analyst/Designer with A2A redelegation.
+- `packages/chain` — Smart Accounts Kit, x402 buyer, 1Shot relayer client.

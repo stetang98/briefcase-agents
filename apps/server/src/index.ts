@@ -117,7 +117,10 @@ if (entry.endsWith("index.ts") || entry.endsWith("index.js")) {
   }
   const port = Number(process.env.PORT ?? 4021);
   const corsOrigins = process.env.CORS_ORIGINS?.split(",");
-  buildApp({ payTo: getAddress(payTo), corsOrigins }).listen(port, () => {
-    console.log(`intel API listening on :${port}`);
+  // Lazy import so the agents package isn't loaded in test/import paths.
+  const { buildOrchestrator } = await import("./orchestrator.js");
+  const runJob = buildOrchestrator() ?? undefined;
+  buildApp({ payTo: getAddress(payTo), corsOrigins, runJob }).listen(port, () => {
+    console.log(`Briefcase server on :${port}${runJob ? " (orchestrator live)" : " (intel API only)"}`);
   });
 }

@@ -2,11 +2,19 @@ import { Router, type Router as RouterType, type RequestHandler } from "express"
 import { randomUUID } from "node:crypto";
 import type { EventBus, BriefcaseEvent } from "./events.js";
 
+/** Minimal report shape the server stores and returns (matches CompiledReport structurally). */
+export interface JobReportLike {
+  markdown: string;
+  topic?: string;
+  coverImage?: string;
+  sections?: unknown[];
+}
+
 export interface JobRecord {
   id: string;
   topic: string;
   status: "running" | "done" | "failed";
-  report?: { markdown: string; [k: string]: unknown };
+  report?: JobReportLike;
   error?: string;
 }
 export type JobStore = Map<string, JobRecord>;
@@ -16,7 +24,7 @@ export type RunJobFn = (
   jobId: string,
   topic: string,
   emit: (e: BriefcaseEvent) => void,
-) => Promise<{ markdown: string; [k: string]: unknown }>;
+) => Promise<JobReportLike>;
 
 export interface JobsDeps {
   bus: EventBus;
