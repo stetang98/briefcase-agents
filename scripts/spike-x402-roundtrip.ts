@@ -3,12 +3,13 @@
 // Prereq: server running -> SERVER_PAYTO=<chief addr> pnpm --filter @briefcase/server dev
 import "dotenv/config";
 import type { Hex } from "viem";
-import { makeBuyerSmartAccount } from "../packages/chain/src/accounts.js";
+import { make7702SmartAccount } from "../packages/chain/src/accounts.js";
 import { makePaidFetch } from "../packages/chain/src/paidFetch.js";
 import { CHAINS, requireEnv } from "../packages/chain/src/config.js";
 
-const account = await makeBuyerSmartAccount(requireEnv("DEV_BUYER_PK") as Hex, CHAINS.demo);
-console.log("buyer smart account:", account.address);
+// Facilitator requires the delegator to be a 7702-upgraded EOA (verified live).
+const account = await make7702SmartAccount(requireEnv("DEV_BUYER_PK") as Hex, CHAINS.demo);
+console.log("buyer 7702 smart account:", account.address);
 
 const paidFetch = makePaidFetch({ account });
 const url = process.env.INTEL_URL ?? "http://localhost:4021/api/intel/uniswap";

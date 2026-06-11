@@ -18,8 +18,14 @@ export async function makeBuyerSmartAccount(pk: Hex, chain: Chain) {
   });
 }
 
-/** Stateless 7702 smart account view over an EOA (Chief settlement wallet for 1Shot). */
-export async function makeChief7702Account(pk: Hex, chain: Chain) {
+/**
+ * Stateless 7702 smart account view over an EOA.
+ * This is the canonical account type for ALL Briefcase wallets: the MetaMask
+ * x402 facilitator requires delegator EOAs to be 7702-upgraded on-chain
+ * (verified live: `invalid_exact_evm_erc7710_account_not_delegated`), and the
+ * 1Shot relayer performs that upgrade gas-free via an attached authorization.
+ */
+export async function make7702SmartAccount(pk: Hex, chain: Chain) {
   const account = privateKeyToAccount(pk);
   return toMetaMaskSmartAccount({
     client: publicClientFor(chain),

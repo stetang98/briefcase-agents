@@ -7,6 +7,9 @@
     "typecheck": "pnpm -r exec tsc --noEmit"
   },
   "devDependencies": {
+    "@metamask/smart-accounts-kit": "1.6.0",
+    "@metamask/x402": "0.2.0",
+    "@x402/core": "2.14.0",
     "dotenv": "^16.6.1",
     "tsx": "^4.20.0",
     "typescript": "^5.8.0",

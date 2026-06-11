@@ -5,7 +5,7 @@ import { encodeFunctionData, erc20Abi, getAddress, bytesToHex, type Hex } from "
 import { privateKeyToAccount } from "viem/accounts";
 import { randomBytes } from "node:crypto";
 import { createDelegation, ScopeType } from "@metamask/smart-accounts-kit";
-import { makeChief7702Account, publicClientFor } from "../packages/chain/src/accounts.js";
+import { make7702SmartAccount, publicClientFor } from "../packages/chain/src/accounts.js";
 import { OneShotClient, type OneShotBundle } from "../packages/chain/src/oneshot/client.js";
 import { CHAINS, ONESHOT_TESTNET, requireEnv } from "../packages/chain/src/config.js";
 
@@ -20,7 +20,7 @@ const usdc = caps.tokens.find((t) => t.symbol === "USDC");
 if (!usdc) throw new Error("relayer does not accept USDC on this chain");
 console.log("relayer target:", caps.targetAddress, "feeCollector:", caps.feeCollector);
 
-const chief = await makeChief7702Account(pk, chain);
+const chief = await make7702SmartAccount(pk, chain);
 
 // EIP-7702 authorization — only while the EOA is not yet upgraded.
 const code = await publicClient.getCode({ address: eoa.address });
@@ -51,7 +51,9 @@ if (!code || code === "0x") {
   console.log("EOA already upgraded, code:", code.slice(0, 20), "…");
 }
 
-const PAYOUT = 10000n; // 0.01 USDC demo payout back to self
+// Payout funds the buyer EOA so it can do its own 7702 upgrade + x402 payments.
+const buyerEoa = privateKeyToAccount(requireEnv("DEV_BUYER_PK") as Hex);
+const PAYOUT = 8_000_000n; // 8 USDC
 
 async function buildSigned(fee: bigint): Promise<OneShotBundle> {
   const delegation = createDelegation({
@@ -88,7 +90,7 @@ async function buildSigned(fee: bigint): Promise<OneShotBundle> {
             data: encodeFunctionData({
               abi: erc20Abi,
               functionName: "transfer",
-              args: [eoa.address, PAYOUT],
+              args: [buyerEoa.address, PAYOUT],
             }),
           },
         ],

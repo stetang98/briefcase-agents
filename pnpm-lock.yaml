@@ -8,6 +8,15 @@ importers:
 
   .:
     devDependencies:
+      '@metamask/smart-accounts-kit':
+        specifier: 1.6.0
+        version: 1.6.0(typescript@5.9.3)(viem@2.52.2(typescript@5.9.3)(zod@3.25.76))(zod@3.25.76)
+      '@metamask/x402':
+        specifier: 0.2.0
+        version: 0.2.0(@x402/core@2.14.0)(@x402/evm@2.14.0(typescript@5.9.3))
+      '@x402/core':
+        specifier: 2.14.0
+        version: 2.14.0
       dotenv:
         specifier: ^16.6.1
         version: 16.6.1
