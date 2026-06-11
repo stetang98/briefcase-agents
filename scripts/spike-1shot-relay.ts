@@ -1,7 +1,7 @@
 // LIVE SPIKE: Chief EOA upgrades itself via EIP-7702 and relays an ERC-7710
 // bundle through the 1Shot testnet relayer, paying the fee in USDC (zero ETH).
 import "dotenv/config";
-import { encodeFunctionData, erc20Abi, getAddress, bytesToHex, type Hex } from "viem";
+import { encodeFunctionData, erc20Abi, getAddress, bytesToHex, parseUnits, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { randomBytes } from "node:crypto";
 import { createDelegation, ScopeType } from "@metamask/smart-accounts-kit";
@@ -100,9 +100,11 @@ async function buildSigned(fee: bigint): Promise<OneShotBundle> {
 }
 
 const feeData = await oneshot.getFeeData(chain.id, usdc.address);
+const decimals = feeData.token?.decimals ?? 6;
+const parseFee = (s: string) => parseUnits(s, decimals);
 console.log("minFee (USDC base units):", feeData.minFee);
 
-const taskId = await oneshot.estimateThenSend(buildSigned, BigInt(feeData.minFee), {
+const taskId = await oneshot.estimateThenSend(buildSigned, parseFee(feeData.minFee), {
   memo: "briefcase-spike",
   ...(process.env.WEBHOOK_URL ? { destinationUrl: process.env.WEBHOOK_URL } : {}),
 });

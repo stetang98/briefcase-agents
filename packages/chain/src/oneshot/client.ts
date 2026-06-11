@@ -37,10 +37,19 @@ export interface EstimateResult {
   gasUsed: string;
   context: string;
 }
+/**
+ * Live API note (verified 2026-06-10): `minFee` and `requiredPaymentAmount`
+ * are DECIMAL strings in human units (e.g. "0.01"), with `token.decimals`
+ * provided. Convert with a `parseFee` function before doing bigint math.
+ */
 export interface FeeData {
   minFee: string;
   feeCollector: string;
   targetAddress: string;
+  token?: { decimals: number; address: string; symbol: string };
+  rate?: number;
+  gasPrice?: string;
+  expiry?: number;
 }
 /** Status codes: 100 Pending, 110 Submitted, 200 Confirmed, 400 Rejected, 500 Reverted. */
 export interface StatusResult {
@@ -104,15 +113,17 @@ export class OneShotClient {
   async estimateThenSend(
     buildSigned: (fee: bigint) => Promise<OneShotBundle>,
     initialFee: bigint,
-    opts: { destinationUrl?: string; memo?: string } = {},
+    opts: { destinationUrl?: string; memo?: string; parseFee?: (s: string) => bigint } = {},
   ): Promise<string> {
+    const { parseFee = BigInt, ...sendOpts } = opts;
     let bundle = await buildSigned(initialFee);
     let est = await this.estimate(bundle);
-    if (BigInt(est.requiredPaymentAmount) !== initialFee) {
-      bundle = await buildSigned(BigInt(est.requiredPaymentAmount));
+    const required = parseFee(est.requiredPaymentAmount);
+    if (required !== initialFee) {
+      bundle = await buildSigned(required);
       est = await this.estimate(bundle);
     }
     if (!est.success) throw new OneShotRpcError(4211, "simulation failed");
-    return this.send(bundle, est.context, opts);
+    return this.send(bundle, est.context, sendOpts);
   }
 }

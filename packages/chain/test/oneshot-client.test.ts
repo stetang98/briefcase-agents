@@ -32,6 +32,30 @@ describe("OneShotClient", () => {
     await expect(c.getStatus("0xabc")).rejects.toMatchObject({ code: 4204 });
   });
 
+  // Live API note: getFeeData.minFee is a DECIMAL string ("0.01") but
+  // estimate.requiredPaymentAmount is BASE units ("10000"). parseFee exists
+  // for APIs/networks that deviate; default BigInt matches live behavior.
+  it("estimateThenSend supports a custom parseFee for decimal fee strings", async () => {
+    const responses = [
+      ok({ success: true, requiredPaymentAmount: "0.02", gasUsed: "1", context: "ctxA" }),
+      ok({ success: true, requiredPaymentAmount: "0.02", gasUsed: "1", context: "ctxB" }),
+      ok("0x" + "cd".repeat(32)),
+    ];
+    const fetchMock = vi.fn().mockImplementation(async () => responses.shift());
+    const c = new OneShotClient("https://relayer.example/relayers", fetchMock as never);
+    const parseFee = (s: string) => BigInt(Math.round(Number(s) * 1e6)); // USDC 6 decimals
+    const rebuilds: bigint[] = [];
+    await c.estimateThenSend(
+      async (fee) => {
+        rebuilds.push(fee);
+        return { chainId: "84532", transactions: [] };
+      },
+      10000n, // 0.01 USDC in base units
+      { parseFee },
+    );
+    expect(rebuilds).toEqual([10000n, 20000n]);
+  });
+
   it("estimateThenSend re-estimates when fee changes, then sends with price-lock context", async () => {
     const responses = [
       ok({ success: true, requiredPaymentAmount: "20000", gasUsed: "1", context: "ctx1" }),

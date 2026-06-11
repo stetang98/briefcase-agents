@@ -1,7 +1,7 @@
 // Upgrade the buyer EOA to a 7702 smart account via the 1Shot relayer,
 // paying the relay fee in USDC (zero ETH). Single execution: the fee transfer.
 import "dotenv/config";
-import { encodeFunctionData, erc20Abi, getAddress, bytesToHex, type Hex } from "viem";
+import { encodeFunctionData, erc20Abi, getAddress, bytesToHex, parseUnits, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { randomBytes } from "node:crypto";
 import { createDelegation, ScopeType } from "@metamask/smart-accounts-kit";
@@ -83,7 +83,9 @@ async function buildSigned(fee: bigint): Promise<OneShotBundle> {
 }
 
 const feeData = await oneshot.getFeeData(chain.id, usdc.address);
-const taskId = await oneshot.estimateThenSend(buildSigned, BigInt(feeData.minFee), {
+const decimals = feeData.token?.decimals ?? 6;
+const parseFee = (s: string) => parseUnits(s, decimals);
+const taskId = await oneshot.estimateThenSend(buildSigned, parseFee(feeData.minFee), {
   memo: "buyer-7702-upgrade",
 });
 console.log("taskId:", taskId);
