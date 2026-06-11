@@ -49,7 +49,7 @@ pnpm monorepo, TypeScript everywhere:
 briefcase/
 ├── apps/web        Next.js dashboard: wallet connect, 7715 grant, task submission,
 │                   live delegation-tree visualization, report rendering, tx status feed
-├── apps/server    Node backend (Hono or Express):
+├── apps/server    Node backend (Express — required by @x402/express):
 │                   ① agent orchestrator (job queue, agent loop runner)
 │                   ② x402-gated intel API (@x402/express paymentMiddleware +
 │                      x402ExactEvmErc7710ServerScheme + tx-sentinel facilitator)
