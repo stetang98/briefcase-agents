@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@briefcase/chain": "workspace:*",
+    "@metamask/smart-accounts-kit": "1.6.0",
     "viem": "^2.52.2"
   },
   "devDependencies": {

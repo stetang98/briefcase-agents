@@ -8,6 +8,12 @@ import {
   type Delegation,
   type SmartAccountsEnvironment,
 } from "@metamask/smart-accounts-kit";
+import { hashDelegation } from "@metamask/smart-accounts-kit/utils";
+
+/** Stable identifier for a delegation (UI/event correlation). */
+export function delegationId(delegation: Delegation): Hex {
+  return hashDelegation(delegation);
+}
 
 export interface SliceRequest {
   name: string;

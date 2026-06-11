@@ -87,6 +87,9 @@ importers:
       '@briefcase/chain':
         specifier: workspace:*
         version: link:../chain
+      '@metamask/smart-accounts-kit':
+        specifier: 1.6.0
+        version: 1.6.0(typescript@5.9.3)(viem@2.52.2(typescript@5.9.3)(zod@3.25.76))(zod@3.25.76)
       viem:
         specifier: ^2.52.2
         version: 2.52.2(typescript@5.9.3)(zod@3.25.76)
