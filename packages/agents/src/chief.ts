@@ -87,7 +87,7 @@ export async function runJob(
         const prompt =
           `Abstract editorial cover image for a crypto research brief on "${topic}". ` +
           `Minimal, sophisticated, dark navy and warm brass palette, no text.`;
-        const coverImage = await deps.venice.generateImage(prompt);
+        const coverImage = await deps.venice.generateImage(prompt, undefined, d.signal);
         sections.push({ agent: spec.name, text: `Cover: ${topic}`, image: coverImage });
         d.emit({ kind: "agent.finished", jobId, agent: spec.name });
       } catch {
@@ -136,6 +136,9 @@ export async function runJob(
         tools: scopedTools,
         onEvent: (e) =>
           d.emit({ kind: "agent.tool", jobId, agent: spec.name, detail: e.detail }),
+        // Kill switch reaches all the way down: aborts in-flight Venice calls,
+        // retry backoff, and pre-tool execution (tools spend real funds).
+        signal: d.signal,
       });
       sections.push({ agent: spec.name, text: result.text, failed: result.failed });
       d.emit({ kind: result.failed ? "agent.failed" : "agent.finished", jobId, agent: spec.name });

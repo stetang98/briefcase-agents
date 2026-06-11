@@ -83,6 +83,79 @@ describe("VeniceClient error guards", () => {
   });
 });
 
+describe("VeniceClient retry on transient errors", () => {
+  const fail = (status: number) =>
+    ({ ok: false, status, text: async () => "overloaded" }) as Response;
+
+  it("retries 429 with backoff and succeeds (fresh auth header per attempt)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(fail(429))
+      .mockResolvedValueOnce(fail(429))
+      .mockResolvedValueOnce(reply("recovered"));
+    const v = new VeniceClient({
+      apiKey: "k",
+      fetchImpl: fetchMock as never,
+      retryDelaysMs: [1, 1],
+    });
+    const msg = await v.chat({ model: "m", messages: [] });
+    expect(msg.content).toBe("recovered");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries 503 too, then throws the last error when retries are exhausted", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(fail(503));
+    const v = new VeniceClient({
+      apiKey: "k",
+      fetchImpl: fetchMock as never,
+      retryDelaysMs: [1, 1],
+    });
+    await expect(v.chat({ model: "m", messages: [] })).rejects.toThrow(/503/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does NOT retry non-transient errors like 400/402", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(fail(402));
+    const v = new VeniceClient({
+      apiKey: "k",
+      fetchImpl: fetchMock as never,
+      retryDelaysMs: [1, 1],
+    });
+    await expect(v.chat({ model: "m", messages: [] })).rejects.toThrow(/402/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("VeniceClient kill-switch (AbortSignal)", () => {
+  const fail = (status: number) =>
+    ({ ok: false, status, text: async () => "overloaded" }) as Response;
+
+  it("an already-aborted signal prevents any request", async () => {
+    const fetchMock = vi.fn();
+    const v = new VeniceClient({ apiKey: "k", fetchImpl: fetchMock as never });
+    const ctrl = new AbortController();
+    ctrl.abort();
+    await expect(v.chat({ model: "m", messages: [] }, ctrl.signal)).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("abort during retry backoff rejects promptly without another attempt", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(fail(429));
+    const v = new VeniceClient({
+      apiKey: "k",
+      fetchImpl: fetchMock as never,
+      retryDelaysMs: [60_000], // long backoff — abort must cut it short
+    });
+    const ctrl = new AbortController();
+    const pending = v.chat({ model: "m", messages: [] }, ctrl.signal);
+    setTimeout(() => ctrl.abort(), 10);
+    const started = Date.now();
+    await expect(pending).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(5_000); // not the full 60s backoff
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("VeniceClient.generateImage", () => {
   it("posts to /image/generate and returns the first image", async () => {
     const fetchMock = vi.fn().mockResolvedValue({

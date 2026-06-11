@@ -96,6 +96,26 @@ describe("runAgentLoop", () => {
     expect(JSON.parse(toolMsg.content).error).toMatch(/unknown tool/);
   });
 
+  it("passes the kill-switch signal to venice.chat and stops between steps once aborted", async () => {
+    const ctrl = new AbortController();
+    const chat = vi.fn().mockImplementation(async () => {
+      ctrl.abort(); // kill switch fires while the first step is in flight
+      return toolCallMsg;
+    });
+    await expect(
+      runAgentLoop({
+        venice: { chat } as never,
+        model: "m",
+        system: "s",
+        task: "t",
+        tools: { echo: echoTool },
+        signal: ctrl.signal,
+      }),
+    ).rejects.toThrow();
+    expect(chat).toHaveBeenCalledTimes(1); // no second model round-trip after abort
+    expect(chat.mock.calls[0][1]).toBe(ctrl.signal); // signal threaded into venice.chat
+  });
+
   it("emits tool events via onEvent", async () => {
     const chat = vi.fn().mockResolvedValueOnce(toolCallMsg).mockResolvedValueOnce(finalMsg);
     const events: { type: string; detail?: string }[] = [];

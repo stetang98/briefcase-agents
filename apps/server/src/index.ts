@@ -33,6 +33,9 @@ export function buildApp(opts: BuildAppOptions): Express {
   const network = opts.network ?? "eip155:84532";
 
   const app = express();
+  // One reverse-proxy hop (Render) sets X-Forwarded-For; trust it so the
+  // rate limiter keys on real client IPs. Harmless in local dev (no XFF).
+  app.set("trust proxy", 1);
   // CORP must be cross-origin: this API is consumed by the Vercel-hosted
   // dashboard from a different origin (helmet defaults to same-origin).
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));

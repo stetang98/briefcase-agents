@@ -56,24 +56,51 @@ async function buildSiweHeader(signer: SiweSigner, uri: string): Promise<string>
   ).toString("base64");
 }
 
+/** Transient upstream conditions worth retrying (capacity / gateway blips). */
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+/** Abortable sleep: the kill switch must cut retry backoff short, not wait it out. */
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason instanceof Error ? signal.reason : new Error("venice call aborted"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+
+const throwIfAborted = (signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new Error("venice call aborted");
+  }
+};
+
 /** Minimal Venice API client (OpenAI-compatible chat + native image gen). */
 export class VeniceClient {
   private base: string;
   private auth: VeniceAuth;
   private fetchImpl: typeof fetch;
   private timeoutMs: number;
+  private retryDelaysMs: number[];
 
   constructor(
     opts: VeniceAuth & {
       baseUrl?: string;
       fetchImpl?: typeof fetch;
       timeoutMs?: number;
+      /** Backoff between retries of transient upstream errors (429/5xx). */
+      retryDelaysMs?: number[];
     },
   ) {
     this.auth = opts;
     this.base = opts.baseUrl ?? "https://api.venice.ai/api/v1";
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? 120_000;
+    this.retryDelaysMs = opts.retryDelaysMs ?? [2_000, 5_000, 12_000];
   }
 
   private async authHeaders(url: string): Promise<Record<string, string>> {
@@ -86,36 +113,56 @@ export class VeniceClient {
     throw new Error("VeniceClient requires apiKey or walletAccount");
   }
 
-  private async post<T>(path: string, body: unknown): Promise<T> {
+  /**
+   * POST with retry on transient upstream errors. Only HTTP-level statuses are
+   * retried; transport errors (timeout, DNS) fail fast — a retried 120s timeout
+   * would multiply worst-case latency for little gain. The job's kill-switch
+   * signal aborts in-flight requests AND cuts backoff sleeps short.
+   */
+  private async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
     const url = `${this.base}${path}`;
-    const res = await this.fetchImpl(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...(await this.authHeaders(url)) },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeoutMs),
-    });
-    if (!res.ok) {
+    const payload = JSON.stringify(body);
+    let lastError = new Error(`Venice ${path} failed: no attempt made`);
+    for (let attempt = 0; attempt <= this.retryDelaysMs.length; attempt++) {
+      throwIfAborted(signal);
+      if (attempt > 0) await sleep(this.retryDelaysMs[attempt - 1], signal);
+      // Auth headers rebuilt per attempt: SIWE nonces are single-use.
+      const res = await this.fetchImpl(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await this.authHeaders(url)) },
+        body: payload,
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)])
+          : AbortSignal.timeout(this.timeoutMs),
+      });
+      if (res.ok) return res.json() as Promise<T>;
       const detail = await res.text().catch(() => "");
-      throw new Error(`Venice ${path} failed: ${res.status} ${detail.slice(0, 200)}`);
+      lastError = new Error(`Venice ${path} failed: ${res.status} ${detail.slice(0, 200)}`);
+      if (!RETRYABLE_STATUS.has(res.status)) throw lastError;
     }
-    return res.json() as Promise<T>;
+    throw lastError;
   }
 
-  async chat(req: ChatRequest): Promise<VeniceMessage> {
+  async chat(req: ChatRequest, signal?: AbortSignal): Promise<VeniceMessage> {
     const j = await this.post<{ choices?: { message: VeniceMessage }[] }>(
       "/chat/completions",
       req,
+      signal,
     );
     if (!j.choices?.length) throw new Error("Venice returned no chat choices");
     return j.choices[0].message;
   }
 
-  async generateImage(prompt: string, model = "z-image-turbo"): Promise<string> {
-    const j = await this.post<{ images?: string[] }>("/image/generate", {
-      model,
-      prompt,
-      format: "webp",
-    });
+  async generateImage(
+    prompt: string,
+    model = "z-image-turbo",
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const j = await this.post<{ images?: string[] }>(
+      "/image/generate",
+      { model, prompt, format: "webp" },
+      signal,
+    );
     if (!j.images?.length) throw new Error("Venice returned no images");
     return j.images[0];
   }
