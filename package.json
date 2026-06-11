@@ -1,6 +1,7 @@
 {
   "name": "briefcase",
   "private": true,
+  "type": "module",
   "scripts": {
     "test": "pnpm -r test",
     "typecheck": "pnpm -r exec tsc --noEmit"
