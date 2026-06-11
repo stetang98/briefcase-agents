@@ -7,13 +7,16 @@ import { randomBytes } from "node:crypto";
 import { createDelegation, ScopeType, CaveatType } from "@metamask/smart-accounts-kit";
 import { make7702SmartAccount, publicClientFor } from "../packages/chain/src/accounts.js";
 import { OneShotClient, type OneShotBundle } from "../packages/chain/src/oneshot/client.js";
-import { CHAINS, ONESHOT_TESTNET, requireEnv } from "../packages/chain/src/config.js";
+import { CHAINS, ONESHOT_TESTNET, ONESHOT_MAINNET, requireEnv } from "../packages/chain/src/config.js";
 
-const chain = CHAINS.demo;
+// NETWORK=mainnet runs the real Base-mainnet settlement (1Shot track requirement).
+const onMainnet = process.env.NETWORK === "mainnet";
+const chain = onMainnet ? CHAINS.settlement : CHAINS.demo;
+console.log(`network: ${chain.name} (${chain.id}) ${onMainnet ? "— REAL FUNDS" : "(testnet)"}`);
 const pk = requireEnv("DEV_CHIEF_PK") as Hex;
 const eoa = privateKeyToAccount(pk);
 const publicClient = publicClientFor(chain);
-const oneshot = new OneShotClient(ONESHOT_TESTNET);
+const oneshot = new OneShotClient(onMainnet ? ONESHOT_MAINNET : ONESHOT_TESTNET);
 
 const caps = await oneshot.getCapabilities(chain.id);
 const usdc = caps.tokens.find((t) => t.symbol === "USDC");
