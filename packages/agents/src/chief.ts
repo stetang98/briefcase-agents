@@ -134,6 +134,7 @@ export async function runJob(
         system: spec.system,
         task: `Research topic: ${topic}`,
         tools: scopedTools,
+        maxSteps: spec.maxSteps,
         onEvent: (e) =>
           d.emit({ kind: "agent.tool", jobId, agent: spec.name, detail: e.detail }),
         // Kill switch reaches all the way down: aborts in-flight Venice calls,
