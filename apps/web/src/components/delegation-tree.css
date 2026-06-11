@@ -1,0 +1,142 @@
+.tree {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: var(--space-3) var(--space-2);
+}
+
+.node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius);
+  text-align: center;
+  min-width: 200px;
+  position: relative;
+  transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease),
+    transform var(--duration) var(--ease);
+}
+
+.node-active {
+  border-color: var(--color-accent-dim);
+  box-shadow: 0 0 0 1px var(--color-accent-dim), 0 12px 40px -20px var(--color-accent);
+}
+
+.node-revoked {
+  border-color: var(--color-danger);
+  opacity: 0.55;
+}
+
+.node-tag {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: var(--color-accent);
+  text-transform: uppercase;
+}
+
+.node-addr,
+.node-meta,
+.node-slice {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+.node-slice {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.edge {
+  width: 2px;
+  background: var(--color-line);
+  position: relative;
+}
+
+.edge-trunk {
+  height: var(--space-3);
+}
+
+.branches {
+  display: flex;
+  justify-content: space-between;
+  width: min(680px, 92%);
+  height: var(--space-3);
+}
+
+.edge-branch {
+  height: 100%;
+}
+
+.edge-live {
+  background: linear-gradient(var(--color-accent), var(--color-accent-dim));
+  box-shadow: 0 0 10px var(--color-accent-dim);
+  animation: flow 1.4s var(--ease) infinite;
+}
+
+@keyframes flow {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.specialists {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+}
+
+.node-spec {
+  min-width: 200px;
+  border-top: 3px solid var(--spec-color, var(--color-line));
+}
+
+.badge {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-line);
+  color: var(--color-muted);
+}
+
+.badge-working {
+  color: var(--color-accent);
+  border-color: var(--color-accent-dim);
+}
+.badge-done {
+  color: var(--color-ok);
+  border-color: var(--color-ok);
+}
+.badge-failed {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.node-pay {
+  color: var(--color-ok);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 640px) {
+  .specialists {
+    flex-direction: column;
+    align-items: center;
+  }
+  .branches {
+    display: none;
+  }
+}
