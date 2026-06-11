@@ -1,4 +1,4 @@
-import { Router, type Router as RouterType } from "express";
+import { Router, type Router as RouterType, type RequestHandler } from "express";
 import { randomUUID } from "node:crypto";
 import type { EventBus, BriefcaseEvent } from "./events.js";
 
@@ -23,15 +23,19 @@ export interface JobsDeps {
   store: JobStore;
   runJob: RunJobFn;
   idFactory?: () => string;
+  /** Optional per-route limiter for POST /api/jobs (cost protection). */
+  postLimiter?: RequestHandler;
 }
 
-const SAFE_TOPIC = /^[a-zA-Z0-9 _-]{1,80}$/;
+// Must match the intel route's allowlist so an accepted topic is always fulfillable.
+const SAFE_TOPIC = /^[a-zA-Z0-9_-]{1,64}$/;
 
 export function makeJobsRouter(deps: JobsDeps): RouterType {
   const router = Router();
   const newId = deps.idFactory ?? randomUUID;
+  const limiter: RequestHandler = deps.postLimiter ?? ((_req, _res, next) => next());
 
-  router.post("/api/jobs", (req, res) => {
+  router.post("/api/jobs", limiter, (req, res) => {
     const topic = typeof req.body?.topic === "string" ? req.body.topic.trim() : "";
     if (!SAFE_TOPIC.test(topic)) {
       res.status(400).json({ error: "topic must be 1-80 chars [a-zA-Z0-9 _-]" });

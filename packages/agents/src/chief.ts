@@ -43,6 +43,11 @@ export async function runJob(
   d.emit({ kind: "job.started", jobId, topic });
 
   const totalWeight = SPECIALISTS.reduce((sum, s) => sum + s.weight, 0);
+  if (d.totalBudget < BigInt(totalWeight)) {
+    throw new Error(
+      `totalBudget ${d.totalBudget} too small: need >= ${totalWeight} micro-units to slice`,
+    );
+  }
   const unit = d.totalBudget / BigInt(totalWeight);
   const slices = planSlices(
     d.totalBudget,
@@ -85,6 +90,7 @@ export async function runJob(
       const tools = Object.fromEntries(
         Object.entries(allTools).filter(([name]) => spec.toolNames.includes(name)),
       );
+      let coverImage: string | undefined;
       const result = await runAgentLoop({
         venice: d.venice,
         model: d.model,
@@ -93,8 +99,19 @@ export async function runJob(
         tools,
         onEvent: (e) =>
           d.emit({ kind: "agent.tool", jobId, agent: spec.name, detail: e.detail }),
+        onToolResult: (name, r) => {
+          if (name === "generate_image") {
+            const img = (r as { image?: string }).image;
+            if (img) coverImage = img;
+          }
+        },
       });
-      sections.push({ agent: spec.name, text: result.text, failed: result.failed });
+      sections.push({
+        agent: spec.name,
+        text: result.text,
+        failed: result.failed,
+        ...(coverImage ? { image: coverImage } : {}),
+      });
       d.emit({ kind: result.failed ? "agent.failed" : "agent.finished", jobId, agent: spec.name });
     } catch (err) {
       sections.push({
@@ -113,7 +130,7 @@ export async function runJob(
     try {
       await d.settle();
     } catch {
-      d.emit({ kind: "settlement.update", jobId, taskId: "", status: 400 });
+      d.emit({ kind: "settlement.update", jobId, status: 400 });
     }
   }
 

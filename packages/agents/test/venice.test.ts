@@ -35,6 +35,26 @@ describe("VeniceClient.chat", () => {
   });
 });
 
+describe("VeniceClient error guards", () => {
+  it("throws when Venice returns no chat choices", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [] }),
+    } as Response);
+    const v = new VeniceClient({ apiKey: "k", fetchImpl: fetchMock as never });
+    await expect(v.chat({ model: "m", messages: [] })).rejects.toThrow(/no chat choices/);
+  });
+
+  it("throws when Venice returns no images", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ images: [] }),
+    } as Response);
+    const v = new VeniceClient({ apiKey: "k", fetchImpl: fetchMock as never });
+    await expect(v.generateImage("x")).rejects.toThrow(/no images/);
+  });
+});
+
 describe("VeniceClient.generateImage", () => {
   it("posts to /image/generate and returns the first image", async () => {
     const fetchMock = vi.fn().mockResolvedValue({

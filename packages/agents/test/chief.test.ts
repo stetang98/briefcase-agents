@@ -88,4 +88,29 @@ describe("runJob", () => {
       emitted.some((e) => e.kind === "settlement.update" && e.status === 400),
     ).toBe(true);
   });
+
+  it("extracts the designer's generated image into the report cover", async () => {
+    const deps = await makeDeps();
+    (deps.venice.chat as ReturnType<typeof vi.fn>).mockImplementation(async (req) => {
+      const isDesigner = req.messages[0].content.includes("Designer");
+      const calledImage = req.messages.some((m: { role: string }) => m.role === "tool");
+      if (isDesigner && !calledImage) {
+        return {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: "i", type: "function", function: { name: "generate_image", arguments: '{"prompt":"x"}' } },
+          ],
+        };
+      }
+      return finalMsg("section text");
+    });
+    const report = await runJob("jobimg", "uniswap", deps);
+    expect(report.coverImage).toBe("img");
+  });
+
+  it("rejects a totalBudget too small to slice", async () => {
+    const deps = await makeDeps({ totalBudget: 2n });
+    await expect(runJob("jobsmall", "uniswap", deps)).rejects.toThrow(/too small/);
+  });
 });

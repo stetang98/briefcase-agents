@@ -22,10 +22,18 @@ export class VeniceClient {
   private apiKey: string;
   private fetchImpl: typeof fetch;
 
-  constructor(opts: { apiKey: string; baseUrl?: string; fetchImpl?: typeof fetch }) {
+  private timeoutMs: number;
+
+  constructor(opts: {
+    apiKey: string;
+    baseUrl?: string;
+    fetchImpl?: typeof fetch;
+    timeoutMs?: number;
+  }) {
     this.apiKey = opts.apiKey;
     this.base = opts.baseUrl ?? "https://api.venice.ai/api/v1";
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.timeoutMs = opts.timeoutMs ?? 45_000;
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
@@ -33,6 +41,7 @@ export class VeniceClient {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
@@ -42,19 +51,21 @@ export class VeniceClient {
   }
 
   async chat(req: ChatRequest): Promise<VeniceMessage> {
-    const j = await this.post<{ choices: { message: VeniceMessage }[] }>(
+    const j = await this.post<{ choices?: { message: VeniceMessage }[] }>(
       "/chat/completions",
       req,
     );
+    if (!j.choices?.length) throw new Error("Venice returned no chat choices");
     return j.choices[0].message;
   }
 
   async generateImage(prompt: string, model = "z-image-turbo"): Promise<string> {
-    const j = await this.post<{ images: string[] }>("/image/generate", {
+    const j = await this.post<{ images?: string[] }>("/image/generate", {
       model,
       prompt,
       format: "webp",
     });
+    if (!j.images?.length) throw new Error("Venice returned no images");
     return j.images[0];
   }
 }

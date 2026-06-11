@@ -41,6 +41,9 @@ export function buildSpecialistTools(deps: SpecialistDeps): ToolMap {
       run: async ({ topic }: { topic: string }) => {
         const url = `${deps.intelBaseUrl}/api/intel/${encodeURIComponent(topic)}`;
         const res = await deps.paidFetch(url);
+        // Only record a payment for a SUCCESSFUL purchase — never emit a
+        // payment.made event for a failed call (misleading audit trail).
+        if (!res.ok) throw new Error(`intel purchase failed: HTTP ${res.status}`);
         const paymentHeader = res.headers.get("PAYMENT-RESPONSE");
         if (paymentHeader) {
           try {
@@ -53,7 +56,6 @@ export function buildSpecialistTools(deps: SpecialistDeps): ToolMap {
             deps.onPayment?.({ url });
           }
         }
-        if (!res.ok) throw new Error(`intel purchase failed: HTTP ${res.status}`);
         return res.json();
       },
     },

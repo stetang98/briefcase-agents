@@ -51,13 +51,20 @@ export function buildApp(opts: BuildAppOptions): Express {
   // --- Free (un-paywalled) surfaces: events, jobs, webhooks ---
   const bus = new EventBus();
   app.get("/api/events", sseHandler(bus));
+  if (opts.runJob || opts.webhookKeys) {
+    app.use(express.json());
+  }
   if (opts.runJob) {
     const store: JobStore = new Map();
-    app.use(express.json());
-    app.use(makeJobsRouter({ bus, store, runJob: opts.runJob }));
+    const jobLimiter = rateLimit({
+      windowMs: 60_000,
+      limit: 8,
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+    app.use(makeJobsRouter({ bus, store, runJob: opts.runJob, postLimiter: jobLimiter }));
   }
   if (opts.webhookKeys) {
-    app.use(express.json());
     app.use(makeWebhookRouter(bus, opts.webhookKeys));
   }
 

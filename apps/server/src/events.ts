@@ -48,12 +48,16 @@ export function sseHandler(bus: EventBus) {
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
-    const write = (e: BriefcaseEvent) => res.write(`data: ${JSON.stringify(e)}\n\n`);
+    const write = (e: BriefcaseEvent) => {
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify(e)}\n\n`);
+    };
     if (jobId) for (const e of bus.replay(jobId)) write(e);
     const unsub = bus.subscribe((e) => {
       if (!jobId || e.jobId === jobId) write(e);
     });
-    const keepalive = setInterval(() => res.write(": keepalive\n\n"), 25_000);
+    const keepalive = setInterval(() => {
+      if (!res.writableEnded) res.write(": keepalive\n\n");
+    }, 25_000);
     req.on("close", () => {
       clearInterval(keepalive);
       unsub();
