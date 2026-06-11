@@ -1,0 +1,19 @@
+name: keepalive
+
+# Render's free tier sleeps after 15 minutes of no traffic, which would make
+# the first judge request hang ~50s. Ping the health endpoint every 10 minutes
+# to keep the demo warm.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://briefcase-api-rekh.onrender.com/healthz)
+          echo "healthz -> HTTP $code"
+          test "$code" = "200"

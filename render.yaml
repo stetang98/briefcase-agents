@@ -30,6 +30,6 @@ services:
         sync: false
       - key: DEV_BUYER_PK
         sync: false
-      # Uncomment once the Vercel domain is known — locks CORS to the dashboard.
-      # - key: CORS_ORIGINS
-      #   value: "https://your-app.vercel.app"
+      # Lock CORS to the Vercel-hosted dashboard.
+      - key: CORS_ORIGINS
+        value: "https://briefcase-lime.vercel.app"
