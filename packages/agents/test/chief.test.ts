@@ -89,24 +89,16 @@ describe("runJob", () => {
     ).toBe(true);
   });
 
-  it("extracts the designer's generated image into the report cover", async () => {
+  it("deterministically generates a cover image for the report (designer)", async () => {
     const deps = await makeDeps();
-    (deps.venice.chat as ReturnType<typeof vi.fn>).mockImplementation(async (req) => {
-      const isDesigner = req.messages[0].content.includes("Designer");
-      const calledImage = req.messages.some((m: { role: string }) => m.role === "tool");
-      if (isDesigner && !calledImage) {
-        return {
-          role: "assistant",
-          content: null,
-          tool_calls: [
-            { id: "i", type: "function", function: { name: "generate_image", arguments: '{"prompt":"x"}' } },
-          ],
-        };
-      }
-      return finalMsg("section text");
-    });
     const report = await runJob("jobimg", "uniswap", deps);
+    // Designer calls venice.generateImage directly (not via the LLM), so the
+    // cover is always present regardless of tool-calling behaviour.
     expect(report.coverImage).toBe("img");
+    const emitted = (deps.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(
+      emitted.some((e) => e.kind === "agent.tool" && e.agent === "designer" && e.detail === "generate_image"),
+    ).toBe(true);
   });
 
   it("rejects a totalBudget too small to slice", async () => {

@@ -59,10 +59,17 @@ describe("buildSpecialistTools", () => {
     ).rejects.toThrow(/not allowed/);
   });
 
-  it("generate_image returns the image payload", async () => {
-    const tools = buildSpecialistTools(makeDeps());
-    const out = (await tools.generate_image.run({ prompt: "cover" })) as { image: string };
-    expect(out.image).toBe("img-b64");
+  it("generate_image surfaces the image via onImage and returns only a small confirmation", async () => {
+    const onImage = vi.fn();
+    const tools = buildSpecialistTools(makeDeps({ onImage }));
+    const out = (await tools.generate_image.run({ prompt: "cover" })) as {
+      ok: boolean;
+      image?: string;
+    };
+    // The base64 must NOT be in the model-facing return (context-window safety).
+    expect(out.image).toBeUndefined();
+    expect(out.ok).toBe(true);
+    expect(onImage).toHaveBeenCalledWith("img-b64");
   });
 });
 

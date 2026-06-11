@@ -36,7 +36,10 @@ export function buildOrchestrator(): RunJobFn | null {
   const venice = veniceKey
     ? new VeniceClient({ apiKey: veniceKey })
     : new VeniceClient({ walletAccount: privateKeyToAccount(buyerPk as Hex) });
-  const model = process.env.VENICE_MODEL ?? "venice-uncensored-1-2";
+  // Must support function calling or the agents only TALK about using tools.
+  // zai-org-glm-4.7-flash is the cheap flash variant of Venice's
+  // function_calling_default; venice-uncensored-1-2 does NOT do tool calls.
+  const model = process.env.VENICE_MODEL ?? "zai-org-glm-4.7-flash";
 
   // Defense-in-depth: even server-side RPC stays read-only (no broadcast).
   const READONLY_RPC = new Set([

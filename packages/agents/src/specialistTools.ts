@@ -15,6 +15,8 @@ export interface SpecialistDeps {
   /** Read-only chain access (viem publicClient.request or Venice crypto RPC). */
   publicRpc: (method: string, params: unknown[]) => Promise<unknown>;
   onPayment?: (info: PaymentInfo) => void;
+  /** Side channel for the generated cover image (kept OUT of the model context). */
+  onImage?: (base64: string) => void;
 }
 
 /** Read-only allowlist — agents must never broadcast via this tool. */
@@ -84,9 +86,14 @@ export function buildSpecialistTools(deps: SpecialistDeps): ToolMap {
         properties: { prompt: { type: "string" } },
         required: ["prompt"],
       },
-      run: async ({ prompt }: { prompt: string }) => ({
-        image: await deps.venice.generateImage(prompt),
-      }),
+      // The base64 image must NOT be returned to the model — it would blow the
+      // context window. Surface it via onImage and tell the model only that it
+      // succeeded.
+      run: async ({ prompt }: { prompt: string }) => {
+        const image = await deps.venice.generateImage(prompt);
+        deps.onImage?.(image);
+        return { ok: true, note: "cover image generated" };
+      },
     },
   };
 }

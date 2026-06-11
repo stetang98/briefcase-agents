@@ -73,7 +73,7 @@ export class VeniceClient {
     this.auth = opts;
     this.base = opts.baseUrl ?? "https://api.venice.ai/api/v1";
     this.fetchImpl = opts.fetchImpl ?? fetch;
-    this.timeoutMs = opts.timeoutMs ?? 45_000;
+    this.timeoutMs = opts.timeoutMs ?? 120_000;
   }
 
   private async authHeaders(url: string): Promise<Record<string, string>> {

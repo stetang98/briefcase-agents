@@ -92,28 +92,40 @@ export async function runJob(
     d.emit({ kind: "agent.started", jobId, agent: spec.name });
     try {
       const deps = d.specialistDeps(spec.name, signedSlice);
-      const allTools = buildSpecialistTools({
+      let coverImage: string | undefined;
+
+      // Designer is deterministic: always produce exactly one cover. Letting an
+      // LLM decide to call generate_image is unreliable — it sometimes skips the
+      // call or stalls. Scout/Analyst remain true tool-calling agents.
+      if (spec.name === "designer") {
+        const prompt =
+          `Abstract editorial cover image for a crypto research brief on "${topic}". ` +
+          `Minimal, sophisticated, dark navy and warm brass palette, no text.`;
+        coverImage = await deps.venice.generateImage(prompt);
+        d.emit({ kind: "agent.tool", jobId, agent: spec.name, detail: "generate_image" });
+        sections.push({ agent: spec.name, text: `Cover: ${topic}`, image: coverImage });
+        d.emit({ kind: "agent.finished", jobId, agent: spec.name });
+        continue;
+      }
+
+      const toolsWithImage = buildSpecialistTools({
         ...deps,
         onPayment: (p) => d.emit({ kind: "payment.made", jobId, agent: spec.name, ...p }),
+        onImage: (b64) => {
+          coverImage = b64;
+        },
       });
-      const tools = Object.fromEntries(
-        Object.entries(allTools).filter(([name]) => spec.toolNames.includes(name)),
+      const scopedTools = Object.fromEntries(
+        Object.entries(toolsWithImage).filter(([name]) => spec.toolNames.includes(name)),
       );
-      let coverImage: string | undefined;
       const result = await runAgentLoop({
         venice: d.venice,
         model: d.model,
         system: spec.system,
         task: `Research topic: ${topic}`,
-        tools,
+        tools: scopedTools,
         onEvent: (e) =>
           d.emit({ kind: "agent.tool", jobId, agent: spec.name, detail: e.detail }),
-        onToolResult: (name, r) => {
-          if (name === "generate_image") {
-            const img = (r as { image?: string }).image;
-            if (img) coverImage = img;
-          }
-        },
       });
       sections.push({
         agent: spec.name,

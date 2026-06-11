@@ -38,6 +38,7 @@ outer: while (Date.now() < deadline) {
     if (event.kind === "report.ready" || event.kind === "job.failed") break outer;
   }
 }
+await reader.cancel().catch(() => {});
 
 const job = await fetch(`${BASE}/api/jobs/${jobId}`).then((r) => r.json() as Promise<{
   status: string;
