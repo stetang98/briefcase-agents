@@ -1,4 +1,5 @@
 import { parseUnits, type Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import {
   make7702SmartAccount,
   publicClientFor,
@@ -22,15 +23,19 @@ import type { RunJobFn } from "./jobs.js";
 export function buildOrchestrator(): RunJobFn | null {
   const chiefPk = process.env.DEV_CHIEF_PK as Hex | undefined;
   const veniceKey = process.env.VENICE_API_KEY;
+  const buyerPk = process.env.DEV_BUYER_PK as Hex | undefined;
   const intelBaseUrl = process.env.INTEL_BASE_URL ?? "http://localhost:4021";
-  if (!chiefPk || !veniceKey) {
-    console.warn("orchestrator disabled: DEV_CHIEF_PK and VENICE_API_KEY required");
+  if (!chiefPk || (!veniceKey && !buyerPk)) {
+    console.warn("orchestrator disabled: DEV_CHIEF_PK plus VENICE_API_KEY or DEV_BUYER_PK required");
     return null;
   }
 
   const chain = CHAINS.demo;
   const publicClient = publicClientFor(chain);
-  const venice = new VeniceClient({ apiKey: veniceKey });
+  // Prefer wallet auth: the agent pays Venice from its own x402 balance.
+  const venice = veniceKey
+    ? new VeniceClient({ apiKey: veniceKey })
+    : new VeniceClient({ walletAccount: privateKeyToAccount(buyerPk as Hex) });
   const model = process.env.VENICE_MODEL ?? "venice-uncensored-1-2";
 
   // Defense-in-depth: even server-side RPC stays read-only (no broadcast).

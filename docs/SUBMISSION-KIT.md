@@ -83,7 +83,18 @@ gas-free way to perform that upgrade.
 in base units (`"10000"`). Mixing them (e.g. `BigInt("0.01")`) throws. Suggestion: document
 the unit of each field in the OpenRPC spec, or normalize both to base units.
 
-Both are now handled in our code and recorded in `docs/superpowers/spikes/`.
+**3. Venice SIWE nonces violate strict EIP-4361 parsers.**
+The `sign-in-with-x` challenge nonce can contain `-` (e.g. `vo-RtfnCZqxtx-g6ub8Ct`), which
+spec-strict helpers (viem's `createSiweMessage`) reject — EIP-4361 requires alphanumeric
+nonces. Builders must hand-roll the message. Suggestion: issue alphanumeric nonces.
+
+**4. Venice SIWE credentials are single-use, and only some endpoints serve challenges.**
+Reusing a signed header returns `X402_SIGN_IN_NONCE_REUSED`; inference endpoints (e.g.
+`/chat/completions`) return 402 without a `sign-in-with-x` extension. What actually works —
+self-generating a fresh nonce per request client-side — is undocumented. Suggestion:
+document the self-generated-nonce flow and the per-request single-use rule explicitly.
+
+All four are handled in our code and recorded in `docs/superpowers/spikes/`.
 
 ---
 

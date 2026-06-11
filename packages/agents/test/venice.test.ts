@@ -35,6 +35,34 @@ describe("VeniceClient.chat", () => {
   });
 });
 
+describe("VeniceClient wallet auth (SIWE)", () => {
+  const walletAccount = {
+    address: "0x14B8269984c2FE6A277c99376B6ff74A7f2FA28b" as const,
+    signMessage: vi.fn().mockResolvedValue("0x" + "ab".repeat(65)),
+  };
+
+  it("attaches X-Sign-In-With-X with a fresh nonce per request (no Authorization)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(reply("ok"));
+    const v = new VeniceClient({ walletAccount, fetchImpl: fetchMock as never });
+    await v.chat({ model: "m", messages: [] });
+    await v.chat({ model: "m", messages: [] });
+
+    const headers1 = fetchMock.mock.calls[0][1].headers;
+    const headers2 = fetchMock.mock.calls[1][1].headers;
+    expect(headers1.Authorization).toBeUndefined();
+    const payload1 = JSON.parse(Buffer.from(headers1["X-Sign-In-With-X"], "base64").toString());
+    const payload2 = JSON.parse(Buffer.from(headers2["X-Sign-In-With-X"], "base64").toString());
+    expect(payload1.address).toBe(walletAccount.address);
+    expect(payload1.chainId).toBe(8453);
+    expect(payload1.message).toContain("api.venice.ai wants you to sign in");
+    expect(payload1.message).toContain(walletAccount.address);
+    // fresh nonce per request — single-use server-side
+    const nonce = (m: string) => /Nonce: (\S+)/.exec(m)?.[1];
+    expect(nonce(payload1.message)).toBeDefined();
+    expect(nonce(payload1.message)).not.toBe(nonce(payload2.message));
+  });
+});
+
 describe("VeniceClient error guards", () => {
   it("throws when Venice returns no chat choices", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
