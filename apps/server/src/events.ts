@@ -47,7 +47,11 @@ export function sseHandler(bus: EventBus) {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      // Reverse proxies (Render/nginx) buffer responses by default, which
+      // stalls SSE until the buffer fills — disable it for this stream.
+      "X-Accel-Buffering": "no",
     });
+    res.flushHeaders();
     const write = (e: BriefcaseEvent) => {
       if (!res.writableEnded) res.write(`data: ${JSON.stringify(e)}\n\n`);
     };

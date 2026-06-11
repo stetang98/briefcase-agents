@@ -1,0 +1,35 @@
+# Render Blueprint — deploys the Briefcase backend (free plan).
+# Frontend lives on Vercel; set CORS_ORIGINS in the Render dashboard once
+# the Vercel domain is known.
+services:
+  - type: web
+    name: briefcase-api
+    runtime: docker
+    plan: free
+    dockerfilePath: apps/server/Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Pin the port: the orchestrator's specialists call the paywalled intel
+      # API on the SAME server via INTEL_BASE_URL (default localhost:4021), so
+      # the server must actually listen on 4021 — don't let Render pick 10000.
+      - key: PORT
+        value: "4021"
+      # Chief agent address — receives the x402 intel payments (testnet USDC).
+      - key: SERVER_PAYTO
+        value: "0x39ba9943aDBcDB3a8C9C06e25ddABd134A64F793"
+      # Specialists call the paywalled intel API on this same server; declared
+      # explicitly so a future PORT change updates both together.
+      - key: INTEL_BASE_URL
+        value: "http://localhost:4021"
+      # Secrets: entered in the Render dashboard at blueprint creation,
+      # never stored in the repo.
+      - key: DEV_CHIEF_PK
+        sync: false
+      - key: DEV_BUYER_PK
+        sync: false
+      # Uncomment once the Vercel domain is known — locks CORS to the dashboard.
+      # - key: CORS_ORIGINS
+      #   value: "https://your-app.vercel.app"

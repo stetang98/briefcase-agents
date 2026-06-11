@@ -15,6 +15,8 @@ function mockReqRes(query: Record<string, string>) {
   const res = {
     writableEnded: false,
     writeHead: vi.fn(),
+    // Handler flushes headers immediately so proxies open the stream.
+    flushHeaders: vi.fn(),
     write: (s: string) => {
       chunks.push(s);
       return true;

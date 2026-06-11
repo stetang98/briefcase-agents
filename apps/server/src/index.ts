@@ -33,7 +33,9 @@ export function buildApp(opts: BuildAppOptions): Express {
   const network = opts.network ?? "eip155:84532";
 
   const app = express();
-  app.use(helmet());
+  // CORP must be cross-origin: this API is consumed by the Vercel-hosted
+  // dashboard from a different origin (helmet defaults to same-origin).
+  app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
   app.use(
     cors({
       origin: opts.corsOrigins ?? true,
