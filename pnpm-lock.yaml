@@ -82,6 +82,22 @@ importers:
         specifier: ^3.2.0
         version: 3.2.6(@types/debug@4.1.13)(@types/node@25.9.3)(tsx@4.22.4)
 
+  packages/agents:
+    dependencies:
+      '@briefcase/chain':
+        specifier: workspace:*
+        version: link:../chain
+      viem:
+        specifier: ^2.52.2
+        version: 2.52.2(typescript@5.9.3)(zod@3.25.76)
+    devDependencies:
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@25.9.3)(tsx@4.22.4)
+
   packages/chain:
     dependencies:
       '@metamask/smart-accounts-kit':
