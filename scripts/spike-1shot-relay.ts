@@ -1,5 +1,6 @@
-// LIVE SPIKE: Chief EOA upgrades itself via EIP-7702 and relays an ERC-7710
-// bundle through the 1Shot testnet relayer, paying the fee in USDC (zero ETH).
+// LIVE: Chief EOA upgrades itself via EIP-7702 and relays an ERC-7710 bundle
+// through the 1Shot relayer, paying the fee in USDC (zero ETH).
+// Testnet by default; NETWORK=mainnet CONFIRM_MAINNET=yes runs on Base mainnet.
 import "dotenv/config";
 import { encodeFunctionData, erc20Abi, getAddress, bytesToHex, parseUnits, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -7,10 +8,17 @@ import { randomBytes } from "node:crypto";
 import { createDelegation, ScopeType, CaveatType } from "@metamask/smart-accounts-kit";
 import { make7702SmartAccount, publicClientFor } from "../packages/chain/src/accounts.js";
 import { OneShotClient, type OneShotBundle } from "../packages/chain/src/oneshot/client.js";
-import { CHAINS, ONESHOT_TESTNET, ONESHOT_MAINNET, requireEnv } from "../packages/chain/src/config.js";
+import { CHAINS, ADDRESSES, ONESHOT_TESTNET, ONESHOT_MAINNET, requireEnv } from "../packages/chain/src/config.js";
 
 // NETWORK=mainnet runs the real Base-mainnet settlement (1Shot track requirement).
-const onMainnet = process.env.NETWORK === "mainnet";
+const networkEnv = process.env.NETWORK ?? "testnet";
+if (networkEnv !== "mainnet" && networkEnv !== "testnet") {
+  throw new Error(`unknown NETWORK: ${networkEnv} (use "testnet" or "mainnet")`);
+}
+const onMainnet = networkEnv === "mainnet";
+if (onMainnet && process.env.CONFIRM_MAINNET !== "yes") {
+  throw new Error("mainnet run spends REAL funds — set CONFIRM_MAINNET=yes to proceed");
+}
 const chain = onMainnet ? CHAINS.settlement : CHAINS.demo;
 console.log(`network: ${chain.name} (${chain.id}) ${onMainnet ? "— REAL FUNDS" : "(testnet)"}`);
 const pk = requireEnv("DEV_CHIEF_PK") as Hex;
@@ -21,6 +29,11 @@ const oneshot = new OneShotClient(onMainnet ? ONESHOT_MAINNET : ONESHOT_TESTNET)
 const caps = await oneshot.getCapabilities(chain.id);
 const usdc = caps.tokens.find((t) => t.symbol === "USDC");
 if (!usdc) throw new Error("relayer does not accept USDC on this chain");
+// SECURITY: never trust the relayer-supplied token address — pin to canonical USDC.
+const pinnedUsdc = onMainnet ? ADDRESSES.usdcBase : ADDRESSES.usdcBaseSepolia;
+if (usdc.address.toLowerCase() !== pinnedUsdc.toLowerCase()) {
+  throw new Error(`relayer USDC ${usdc.address} != pinned ${pinnedUsdc}`);
+}
 console.log("relayer target:", caps.targetAddress, "feeCollector:", caps.feeCollector);
 
 const chief = await make7702SmartAccount(pk, chain);
@@ -56,7 +69,11 @@ if (!code || code === "0x") {
 
 // Payout funds the buyer EOA so it can do its own 7702 upgrade + x402 payments.
 const buyerEoa = privateKeyToAccount(requireEnv("DEV_BUYER_PK") as Hex);
-const PAYOUT = parseUnits(process.env.PAYOUT_USDC ?? "8", 6);
+// Safe default (a nickel); hard ceiling regardless of env. The signed delegation
+// allowance is fee + PAYOUT, redeemable by the relayer for 10 min — keep it small.
+const PAYOUT = parseUnits(process.env.PAYOUT_USDC ?? "0.05", 6);
+const MAX_PAYOUT = parseUnits("10", 6);
+if (PAYOUT > MAX_PAYOUT) throw new Error(`payout ${PAYOUT} exceeds ceiling ${MAX_PAYOUT}`);
 
 async function buildSigned(fee: bigint): Promise<OneShotBundle> {
   const delegation = createDelegation({

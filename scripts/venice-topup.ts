@@ -9,7 +9,7 @@ import { requireEnv, ADDRESSES } from "../packages/chain/src/config.js";
 
 const BASE = "https://api.venice.ai/api/v1";
 
-// Pinned expectations (verified via discovery on 2026-06-12):
+// Pinned expectations (verified via live discovery on 2026-06-11):
 const EXPECT = {
   network: "eip155:8453",
   asset: ADDRESSES.usdcBase.toLowerCase(), // 0x833589fc…2913 native Base USDC
@@ -19,6 +19,16 @@ const EXPECT = {
 
 const account = privateKeyToAccount(requireEnv("DEV_BUYER_PK") as Hex);
 console.log("paying from Agent wallet:", account.address);
+
+// Idempotency: refuse to double-pay if the Venice balance is already funded.
+// (Balance endpoint needs SIWE auth; an unauthenticated hit 402s, so we gate on
+// an explicit override instead when re-topping deliberately.)
+if (process.env.CONFIRM_TOPUP !== "yes") {
+  throw new Error(
+    "This pays $5 USDC on EVERY run (no balance check possible pre-auth). " +
+      "If you really want to top up, set CONFIRM_TOPUP=yes.",
+  );
+}
 
 // 1. Discover
 const discover = await fetch(`${BASE}/x402/top-up`, { method: "POST" });
@@ -62,3 +72,9 @@ const settle = await fetch(`${BASE}/x402/top-up`, {
 const body = await settle.text();
 console.log("settle status:", settle.status);
 console.log(body.slice(0, 1000));
+if (!settle.ok) {
+  throw new Error(
+    `settle failed (${settle.status}) — a signed $5 authorization may still be live for ~5 min; ` +
+      "do NOT immediately re-run. Check the Venice balance before retrying.",
+  );
+}
