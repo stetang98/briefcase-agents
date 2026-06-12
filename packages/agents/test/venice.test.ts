@@ -167,4 +167,17 @@ describe("VeniceClient.generateImage", () => {
     expect(img).toBe("base64data");
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.venice.ai/api/v1/image/generate");
   });
+
+  it("requests hide_watermark so the cover carries no 'Venice' signature text", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ images: ["base64data"] }),
+    } as Response);
+    const v = new VeniceClient({ apiKey: "k", fetchImpl: fetchMock as never });
+    await v.generateImage("abstract cover");
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.hide_watermark).toBe(true);
+    expect(body.prompt).toBe("abstract cover");
+    expect(body.format).toBe("webp");
+  });
 });

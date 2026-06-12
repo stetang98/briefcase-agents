@@ -160,7 +160,11 @@ export class VeniceClient {
   ): Promise<string> {
     const j = await this.post<{ images?: string[] }>(
       "/image/generate",
-      { model, prompt, format: "webp" },
+      // hide_watermark drops the model's "Venice" signature so the cover stays
+      // pure abstract art (the prompt asks for no text; the watermark is added
+      // post-generation, not promptable away). Venice may still ignore it for
+      // some content — the prompt's no-text rule remains the primary guard.
+      { model, prompt, format: "webp", hide_watermark: true },
       signal,
     );
     if (!j.images?.length) throw new Error("Venice returned no images");
