@@ -15,6 +15,12 @@ import type { VeniceClient } from "./venice.js";
 
 export type BriefcaseEvent = Record<string, unknown> & { kind: string };
 
+// Low temperature keeps the flash-tier model faithful: scout summarizes the
+// paid intel feed instead of inventing fake tickers/numbers, and analyst quotes
+// the on-chain readings verbatim. Not zero — a little variation keeps the prose
+// from reading mechanically across the report's sections.
+const SPECIALIST_TEMPERATURE = 0.2;
+
 export interface ChiefDeps {
   venice: VeniceClient;
   model: string;
@@ -85,9 +91,15 @@ export async function runJob(
       d.emit({ kind: "agent.tool", jobId, agent: spec.name, detail: "generate_image" });
       try {
         const deps = d.specialistDeps(spec.name);
+        // No topic word in the prompt: image models try to render any literal
+        // term they see and cannot spell it, producing garbled "text" on the
+        // cover (e.g. "uniswap" -> "unisunp"). The report header already names
+        // the topic — the cover is purely abstract brand art.
         const prompt =
-          `Abstract editorial cover image for a crypto research brief on "${topic}". ` +
-          `Minimal, sophisticated, dark navy and warm brass palette, no text.`;
+          "Abstract editorial cover artwork for a financial research brief. " +
+          "Minimal and sophisticated: deep navy background with warm brass and gold " +
+          "geometric forms, soft gradients, and generous negative space. " +
+          "Absolutely no text, no letters, no words, no numbers, and no typography.";
         const coverImage = await deps.venice.generateImage(prompt, undefined, d.signal);
         sections.push({ agent: spec.name, text: `Cover: ${topic}`, image: coverImage });
         d.emit({ kind: "agent.finished", jobId, agent: spec.name });
@@ -144,6 +156,7 @@ export async function runJob(
           task: analystTask(topic, snapshot),
           tools: {},
           maxSteps: spec.maxSteps,
+          temperature: SPECIALIST_TEMPERATURE,
           signal: d.signal,
         });
         const grounded = !result.failed && isGrounded(result.text, snapshot);
@@ -169,6 +182,7 @@ export async function runJob(
         task: `Research topic: ${topic}`,
         tools: scopedTools,
         maxSteps: spec.maxSteps,
+        temperature: SPECIALIST_TEMPERATURE,
         onEvent: (e) =>
           d.emit({ kind: "agent.tool", jobId, agent: spec.name, detail: e.detail }),
         // Kill switch reaches all the way down: aborts in-flight Venice calls,

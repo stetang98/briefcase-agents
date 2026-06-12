@@ -36,6 +36,25 @@ describe("runAgentLoop", () => {
     expect(toolMsg.tool_call_id).toBe("1");
   });
 
+  it("forwards an explicit temperature to venice.chat (determinism control)", async () => {
+    const chat = vi.fn().mockResolvedValue(finalMsg);
+    await runAgentLoop({
+      venice: { chat } as never,
+      model: "m",
+      system: "s",
+      task: "t",
+      tools: {},
+      temperature: 0.2,
+    });
+    expect(chat.mock.calls[0][0].temperature).toBe(0.2);
+  });
+
+  it("omits temperature when not provided (default model behavior)", async () => {
+    const chat = vi.fn().mockResolvedValue(finalMsg);
+    await runAgentLoop({ venice: { chat } as never, model: "m", system: "s", task: "t", tools: {} });
+    expect(chat.mock.calls[0][0]).not.toHaveProperty("temperature");
+  });
+
   it("stops with failed=true when maxSteps is exhausted", async () => {
     const chat = vi.fn().mockResolvedValue(toolCallMsg); // never returns a final answer
     const result = await runAgentLoop({

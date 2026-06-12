@@ -133,6 +133,36 @@ describe("runJob", () => {
     expect(report.markdown).toMatch(/unavailable/);
   });
 
+  it("cover prompt omits the topic word and forbids text (image models cannot spell the topic)", async () => {
+    const deps = await makeDeps();
+    const generateImage = vi.fn().mockResolvedValue("img");
+    const base = deps.specialistDeps;
+    deps.specialistDeps = (name, slice) =>
+      name === "designer"
+        ? { ...base(name, slice), venice: { generateImage } as never }
+        : base(name, slice);
+    await runJob("jobcover", "uniswap", deps);
+    expect(generateImage).toHaveBeenCalledTimes(1);
+    const prompt = (generateImage.mock.calls[0][0] as string).toLowerCase();
+    // The topic word must NOT be in the prompt — the model would try to render
+    // it as text and misspell it (the "unisunp" failure).
+    expect(prompt).not.toContain("uniswap");
+    // ...and the no-text instruction must be explicit.
+    expect(prompt).toMatch(/no text|no letters|no words/);
+  });
+
+  it("runs specialist reasoning at a low, fixed temperature for faithful sections", async () => {
+    const deps = await makeDeps();
+    await runJob("jobtemp", "uniswap", deps);
+    const chat = deps.venice.chat as ReturnType<typeof vi.fn>;
+    expect(chat).toHaveBeenCalled();
+    // Both LLM specialists (scout, analyst) must request a low temperature so
+    // the flash model stops inventing fake specifics.
+    for (const call of chat.mock.calls) {
+      expect(call[0].temperature).toBeLessThanOrEqual(0.3);
+    }
+  });
+
   it("analyst grounding: ungrounded model text is replaced by the code-built fallback", async () => {
     const deps = await makeDeps();
     // Model returns plausible-but-ungrounded prose (the live failure mode).

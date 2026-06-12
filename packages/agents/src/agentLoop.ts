@@ -9,6 +9,8 @@ export interface AgentLoopOptions {
   tools: ToolMap;
   /** Hard cap on model round-trips (cost/runaway protection). Default 8. */
   maxSteps?: number;
+  /** Sampling temperature; low values keep specialist sections faithful. */
+  temperature?: number;
   onEvent?: (e: { type: string; detail?: string }) => void;
   /** Kill switch: aborts in-flight Venice calls and stops further steps. */
   signal?: AbortSignal;
@@ -39,6 +41,7 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentResult> {
       {
         model: o.model,
         messages,
+        ...(o.temperature !== undefined ? { temperature: o.temperature } : {}),
         ...(veniceTools.length > 0 ? { tools: veniceTools, tool_choice: "auto" as const } : {}),
       },
       o.signal,
